@@ -11,7 +11,7 @@
 We are delighted to introduce **FLAC** (**F**ield **L**east-Energy **A**ctor-**C**ritic), a likelihood-free framework for maximum entropy reinforcement learning that regulates policy stochasticity by penalizing the kinetic energy of the velocity field. FLAC integrates flow-based generative policies with principled entropy regularization — without ever computing action log-densities.
 
 [![Paper](https://img.shields.io/badge/Paper-arXiv%3A2602.12829-B31B1B.svg)](https://arxiv.org/abs/2602.12829)
-[![Project Page](https://img.shields.io/badge/Project-Page-blue.svg)](https://lvlei-221.github.io/flac.github.io/)
+[![Project Page](https://img.shields.io/badge/Project-Page-blue.svg)](https://pinkmoon-io.github.io/flac.github.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
 ## News
