@@ -14,8 +14,6 @@ import numpy as np
 from utilis.utils import RunningMeanStd
 
 
-CFM_MIN = 1e-3
-CFM_MAX = 1
 
 mode = "max-autotune"
 compile_model = True
