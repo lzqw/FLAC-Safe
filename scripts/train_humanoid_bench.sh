@@ -12,26 +12,17 @@ tasks=(h1-walk-v0
     h1-stand-v0
     h1-run-v0
     h1-pole-v0
-    # h1-sit_hard-v0
-    # h1-balance_simple-v0
-    # h1-maze-v0
-    # h1-sit_simple-v0
-    # h1-sit_hard-v0
-    # h1-stair-v0
-    # h1-hurdle-v0
+    h1-sit_hard-v0
+    h1-balance_simple-v0
+    h1-maze-v0
+    h1-sit_simple-v0
+    h1-sit_hard-v0
+    h1-stair-v0
+    h1-hurdle-v0
     )
 
-# tasks=(
-#     h1-reach-v0
-#     h1-maze-v0
-#     h1-sit_simple-v0
-#     h1-sit_hard-v0
-#     h1-stair-v0
-#     h1-hurdle-v0
-#     )
-# 13*3*2 = 78/24
 
-seeds=(57 557 5557)
+seeds=(1 2 3 4 5)
 
 # LAC: Target kinetic energy coefficient search
 target_kinetic_coefs=(2.5)
@@ -39,14 +30,11 @@ target_kinetic_coefs=(2.5)
 # LAC: Initial log_alpha values
 init_log_alphas=(0)
 
-# 总 GPU 数
+
 NUM_GPUS=8
-# 每个 GPU 最大并发数
 MAX_TASKS_PER_GPU=2
-# 总并发数
 MAX_CONCURRENT=$((NUM_GPUS * MAX_TASKS_PER_GPU))
 
-# 统计当前后台任务数
 function current_jobs {
     jobs -rp | wc -l
 }
