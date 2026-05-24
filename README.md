@@ -15,6 +15,7 @@ We are delighted to introduce **FLAC** (**F**ield **L**east-Energy **A**ctor-**C
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
 ## News
+- [2026/04] 🎉 FLAC was accepted by ICML2026.
 - [2026/03] 🔥 We release the code for FLAC.
 - [2026/02] 🎉 We release our paper on arXiv.
 
