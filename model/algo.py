@@ -20,7 +20,6 @@ except Exception:  # pragma: no cover - fallback for older torch versions
 
 
 mode = "max-autotune"
-compile_model = True
 
 class flowAC(object):
     def __init__(self, num_inputs, action_space, args):
@@ -136,7 +135,8 @@ class flowAC(object):
             self.safety_critic_optim = None
 
         # ---------------------- Compile Models ----------------------
-        if compile_model:
+        self.compile_model = bool(getattr(args, "compile_model", False))
+        if self.compile_model:
             self.critic = torch.compile(self.critic,mode=mode)
             self.critic_target = torch.compile(self.critic_target, mode=mode)
             # self.policy = torch.compile(self.policy, mode=mode)

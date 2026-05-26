@@ -4,5 +4,10 @@ __pycache__/
 wandb/
 runs/
 logs/
+reports/
 results/
 checkpoints/
+checkpoint/
+*.pt
+*.pth
+*.ckpt
