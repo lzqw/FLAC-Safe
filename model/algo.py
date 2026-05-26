@@ -13,6 +13,10 @@ import numpy as np
 
 from utilis.utils import RunningMeanStd
 
+try:
+    from torch.func import jvp as torch_func_jvp
+except Exception:  # pragma: no cover - fallback for older torch versions
+    torch_func_jvp = None
 
 
 mode = "max-autotune"
@@ -47,6 +51,25 @@ class flowAC(object):
         self.lambda_jvp = float(getattr(args, "lambda_jvp", 0.05))
         self.jvp_warmup_steps = int(getattr(args, "jvp_warmup_steps", 20000))
         self.safe_policy_loss = bool(getattr(args, "safe_policy_loss", True))
+
+        # Safety-critical directional derivative options.
+        # jvp_mode="forward" uses torch.func.jvp when available; it falls back to
+        # grad-dot-vector if the local PyTorch build does not support forward-mode JVP.
+        self.jvp_mode = str(getattr(args, "jvp_mode", "forward"))
+        self.normalize_jvp = bool(getattr(args, "normalize_jvp", False))
+        self.jvp_norm_mode = str(getattr(args, "jvp_norm_mode", "hutchinson"))
+        self.jvp_hutchinson_samples = int(getattr(args, "jvp_hutchinson_samples", 1))
+        self.jvp_eps = float(getattr(args, "jvp_eps", 1e-6))
+
+        # Optional real-interaction soft normal masking. This is deliberately
+        # separated from the training-time JVP-SCD objective: training can use
+        # JVP only, while environment sampling can use an explicit VJP normal.
+        self.soft_normal_masking = bool(getattr(args, "soft_normal_masking", False))
+        self.masking_warmup_steps = int(getattr(args, "masking_warmup_steps", self.jvp_warmup_steps))
+        self.mask_beta_max = float(getattr(args, "mask_beta_max", 0.5))
+        self.mask_beta_tau = float(getattr(args, "mask_beta_tau", 10000.0))
+        self.mask_noise_scale = float(getattr(args, "mask_noise_scale", 0.01))
+        self.mask_noise_clip = float(getattr(args, "mask_noise_clip", 0.25))
 
         # LAC: Target kinetic energy (coef * action_dim)
         target_kinetic_coef = float(getattr(args, "target_kinetic_coef", 2.5))
@@ -118,6 +141,76 @@ class flowAC(object):
             self.critic_target = torch.compile(self.critic_target, mode=mode)
             # self.policy = torch.compile(self.policy, mode=mode)
 
+    def _safe_bandwidth(self):
+        return max(self.safe_bandwidth, 1e-6)
+
+    def _compute_g_mid_from_qc(self, qc):
+        bandwidth = self._safe_bandwidth()
+        return torch.exp(-((qc - self.safe_threshold) ** 2) / (2.0 * bandwidth ** 2))
+
+    def _mask_beta(self):
+        if self.sample_count < self.masking_warmup_steps:
+            return 0.0
+        tau = max(self.mask_beta_tau, 1.0)
+        x = (float(self.sample_count) - float(self.masking_warmup_steps)) / tau
+        beta = self.mask_beta_max / (1.0 + np.exp(-x))
+        return float(beta)
+
+    def _soft_normal_mask_action(self, state, action, noise):
+        """Softly attenuate exploration noise along the learned risk normal.
+
+        epsilon_mask = epsilon - beta * g_mid * n_C * (n_C^T epsilon)
+
+        This module is only for real environment sampling. The training-time
+        policy loss can still use JVP-SCD without explicitly constructing n_C.
+        """
+        if (not self.safe_env) or (not self.safe_policy_loss) or (not self.soft_normal_masking):
+            return action + noise, {
+                "beta": 0.0,
+                "g_mid": torch.tensor(0.0, device=self.device),
+                "normal_norm": torch.tensor(0.0, device=self.device),
+            }
+        if self.safety_critic is None:
+            return action + noise, {
+                "beta": 0.0,
+                "g_mid": torch.tensor(0.0, device=self.device),
+                "normal_norm": torch.tensor(0.0, device=self.device),
+            }
+
+        beta = self._mask_beta()
+        if beta <= 0.0:
+            return action + noise, {
+                "beta": 0.0,
+                "g_mid": torch.tensor(0.0, device=self.device),
+                "normal_norm": torch.tensor(0.0, device=self.device),
+            }
+
+        # Freeze safety-critic parameters, but keep gradient w.r.t. action.
+        flags = self.set_requires_grad(self.safety_critic, False)
+        try:
+            action_for_grad = action.detach().requires_grad_(True)
+            qc1, qc2 = self.safety_critic(state.detach(), action_for_grad)
+            qc = torch.max(qc1, qc2)
+            g_mid = self._compute_g_mid_from_qc(qc.detach())
+            grad_q = torch.autograd.grad(
+                outputs=qc.sum(),
+                inputs=action_for_grad,
+                create_graph=False,
+                retain_graph=False,
+                only_inputs=True,
+            )[0].detach()
+            normal = grad_q / (grad_q.norm(dim=-1, keepdim=True) + self.jvp_eps)
+            normal_component = (normal * noise).sum(dim=-1, keepdim=True)
+            masked_noise = noise - beta * g_mid * normal * normal_component
+            masked_action = action + masked_noise
+            return masked_action, {
+                "beta": beta,
+                "g_mid": g_mid.detach().mean(),
+                "normal_norm": grad_q.norm(dim=-1).detach().mean(),
+            }
+        finally:
+            self.restore_requires_grad(self.safety_critic, flags)
+
     # only use for env step 
     def select_action(self, state, evaluate=False):
 
@@ -132,9 +225,9 @@ class flowAC(object):
 
         if not evaluate:
             action, _, _ = self.policy.sample_env(state)
-            noise = torch.rand_like(action) * 0.01 * self.noise_level
-            noise = torch.clamp(noise, -0.25, 0.25)
-            action = action + noise
+            noise = torch.randn_like(action) * self.mask_noise_scale * self.noise_level
+            noise = torch.clamp(noise, -self.mask_noise_clip, self.mask_noise_clip)
+            action, _ = self._soft_normal_mask_action(state, action, noise)
         else:
             with torch.no_grad():
                 action, _, _ = self.policy.sample_env(state)
@@ -252,12 +345,32 @@ class flowAC(object):
             "safety/cost_batch": cost_batch.detach().mean().item(),
         }
 
-    def compute_jvp_scd(self, state_batch, action_pi, velocity_action, g_mid):
+    def _qc_scalar(self, state_batch, action_batch):
+        qc1, qc2 = self.safety_critic(state_batch, action_batch)
+        return torch.max(qc1, qc2)
+
+    def _forward_jvp_directional(self, state_batch, action_base, velocity_action):
+        """Compute d Q_C(x,u)[velocity_action] by true forward-mode JVP.
+
+        The primal action is detached so the actor update uses Q_C only as a
+        fixed risk geometry; gradients still flow to velocity_action through the
+        tangent output of JVP.
+        """
+        if torch_func_jvp is None:
+            raise RuntimeError("torch.func.jvp is unavailable in this PyTorch version")
+        state_detached = state_batch.detach()
+        action_detached = action_base.detach()
+
+        def qc_fn(action_in):
+            return self._qc_scalar(state_detached, action_in)
+
+        _, directional = torch_func_jvp(qc_fn, (action_detached,), (velocity_action,))
+        return directional
+
+    def _grad_dot_directional(self, state_batch, action_pi, velocity_action):
+        """Fallback: VJP-style grad-dot-vector directional derivative."""
         action_for_grad = action_pi.detach().requires_grad_(True)
-
-        qc1, qc2 = self.safety_critic(state_batch.detach(), action_for_grad)
-        qc = torch.max(qc1, qc2)
-
+        qc = self._qc_scalar(state_batch.detach(), action_for_grad)
         grad_q = torch.autograd.grad(
             outputs=qc.sum(),
             inputs=action_for_grad,
@@ -265,12 +378,76 @@ class flowAC(object):
             retain_graph=True,
             only_inputs=True,
         )[0].detach()
-
         directional = (grad_q * velocity_action).sum(dim=-1, keepdim=True)
-        jvp_loss = (g_mid.detach() * directional.pow(2)).mean()
-        grad_norm = grad_q.norm(dim=-1).mean().detach()
+        grad_norm_sq = grad_q.pow(2).sum(dim=-1, keepdim=True).detach()
+        return directional, grad_norm_sq
 
-        return jvp_loss, grad_norm
+    def _hutchinson_grad_norm_sq(self, state_batch, action_pi):
+        """Estimate ||grad_u Q_C||^2 using forward-mode JVP probes."""
+        samples = max(1, self.jvp_hutchinson_samples)
+        terms = []
+        for _ in range(samples):
+            xi = torch.randn_like(action_pi)
+            try:
+                d_xi = self._forward_jvp_directional(state_batch, action_pi, xi)
+                terms.append(d_xi.pow(2))
+            except Exception:
+                _, grad_norm_sq = self._grad_dot_directional(state_batch, action_pi, xi)
+                return grad_norm_sq
+        return torch.stack(terms, dim=0).mean(dim=0).detach()
+
+    def compute_jvp_scd(self, state_batch, action_pi, velocity_action, g_mid):
+        """Safety-critical directional derivative penalty.
+
+        Preferred mode: true forward-mode JVP of Q_C along flow velocity.
+        Fallback mode: grad-dot-vector, mathematically the same directional
+        derivative but computed by reverse-mode autograd.
+
+        If normalize_jvp=True, the loss uses an estimated ||grad_u Q_C||^2
+        denominator. With jvp_norm_mode='hutchinson', that denominator is
+        estimated by random JVP probes; with 'exact' it uses the fallback exact
+        reverse-mode gradient norm.
+        """
+        directional_source = "forward_jvp"
+        try:
+            if self.jvp_mode == "forward":
+                directional = self._forward_jvp_directional(state_batch, action_pi, velocity_action)
+                grad_norm_sq = None
+            else:
+                directional, grad_norm_sq = self._grad_dot_directional(state_batch, action_pi, velocity_action)
+                directional_source = "grad_dot"
+        except Exception:
+            directional, grad_norm_sq = self._grad_dot_directional(state_batch, action_pi, velocity_action)
+            directional_source = "grad_dot_fallback"
+
+        if self.normalize_jvp:
+            if self.jvp_norm_mode == "hutchinson":
+                denom = self._hutchinson_grad_norm_sq(state_batch, action_pi)
+            else:
+                if grad_norm_sq is None:
+                    _, grad_norm_sq = self._grad_dot_directional(state_batch, action_pi, torch.zeros_like(velocity_action))
+                denom = grad_norm_sq
+            loss_terms = directional.pow(2) / (denom.detach() + self.jvp_eps)
+            denom_mean = denom.detach().mean()
+            jvp_loss = (g_mid.detach() * loss_terms).mean()
+            grad_norm = torch.sqrt(denom.detach() + self.jvp_eps).mean()
+        else:
+            jvp_loss = (g_mid.detach() * directional.pow(2)).mean()
+            denom_mean = torch.tensor(0.0, device=self.device)
+            if grad_norm_sq is None:
+                # Avoid an extra reverse-mode pass only for logging in forward JVP mode.
+                grad_norm = torch.tensor(0.0, device=self.device)
+            else:
+                grad_norm = torch.sqrt(grad_norm_sq + self.jvp_eps).mean().detach()
+
+        source_code = {
+            "forward_jvp": 1.0,
+            "grad_dot": 0.0,
+            "grad_dot_fallback": -1.0,
+        }[directional_source]
+        source_tensor = torch.tensor(source_code, device=self.device)
+        directional_abs = directional.detach().abs().mean()
+        return jvp_loss, grad_norm.detach(), denom_mean.detach(), directional_abs, source_tensor
 
     @staticmethod
     def set_requires_grad(module, requires_grad):
@@ -310,6 +487,9 @@ class flowAC(object):
             safety_penalty = torch.zeros_like(min_qf_pi)
             jvp_loss = torch.tensor(0.0, device=self.device)
             grad_q_norm = torch.tensor(0.0, device=self.device)
+            jvp_denom_mean = torch.tensor(0.0, device=self.device)
+            jvp_directional_abs = torch.tensor(0.0, device=self.device)
+            jvp_source = torch.tensor(0.0, device=self.device)
             g_mid_mean = torch.tensor(0.0, device=self.device)
             jvp_enabled = self.safe_env and self.safe_policy_loss and current_step_or_updates >= self.jvp_warmup_steps
 
@@ -319,13 +499,9 @@ class flowAC(object):
                     qc1_pi, qc2_pi = self.safety_critic(state_batch, action)
                     qc_pi = torch.max(qc1_pi, qc2_pi)
                     safety_penalty = F.relu(qc_pi - self.safe_threshold)
-                    bandwidth = max(self.safe_bandwidth, 1e-6)
-                    g_mid = torch.exp(
-                        -((qc_pi.detach() - self.safe_threshold) ** 2)
-                        / (2.0 * bandwidth ** 2)
-                    )
+                    g_mid = self._compute_g_mid_from_qc(qc_pi.detach())
                     if jvp_enabled:
-                        jvp_loss, grad_q_norm = self.compute_jvp_scd(
+                        jvp_loss, grad_q_norm, jvp_denom_mean, jvp_directional_abs, jvp_source = self.compute_jvp_scd(
                             state_batch, action, velocity_action, g_mid
                         )
                     g_mid_mean = g_mid.detach().mean()
@@ -364,6 +540,9 @@ class flowAC(object):
             "loss/jvp_scd": float(jvp_loss.detach().item()),
             "safety/g_mid_mean": float(g_mid_mean.detach().item()),
             "safety/grad_q_norm": float(grad_q_norm.detach().item()),
+            "safety/jvp_denom_mean": float(jvp_denom_mean.detach().item()),
+            "safety/jvp_directional_abs": float(jvp_directional_abs.detach().item()),
+            "safety/jvp_source": float(jvp_source.detach().item()),
         }
 
 
