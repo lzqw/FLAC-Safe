@@ -67,12 +67,10 @@ def reset_env(env, seed=None):
 def step_env(env, action, safe_env=False):
     if safe_env:
         next_state, reward, cost, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
-        return next_state, reward, float(cost), done, info
+        return next_state, reward, float(cost), terminated, truncated, info
     next_state, reward, terminated, truncated, info = env.step(action)
-    done = terminated or truncated
     cost = float(info.get("cost", 0.0))
-    return next_state, reward, cost, done, info
+    return next_state, reward, cost, terminated, truncated, info
 
 
 def make_env(task, safe_env=False, train=True):
@@ -104,7 +102,8 @@ def evaluation(agent, env, total_numsteps, writer, best_reward, video_path=None)
         while not done:
             action = agent.select_action(state, evaluate=True)
 
-            next_state, reward, cost, done, info = step_env(env, action, getattr(config, "safe_env", False))
+            next_state, reward, cost, terminated, truncated, info = step_env(env, action, getattr(config, "safe_env", False))
+            done = terminated or truncated
             if eval_recoder is not None:
                 eval_recoder.record(env.render())
             episode_reward += reward
@@ -185,7 +184,10 @@ def train_loop(config, msg = "default"):
         episode_cost = 0
         episode_steps = 0
         done = False
-        state = reset_env(env, seed=config.seed)
+        if i_episode == 1:
+            state = reset_env(env, seed=config.seed)
+        else:
+            state = reset_env(env)
         agent.observe(state)
 
         while not done:
@@ -203,18 +205,16 @@ def train_loop(config, msg = "default"):
                         wandb.log(log_info, step=total_numsteps)
                     updates += 1
 
-            next_state, reward, cost, done, info = step_env(env, action, getattr(config, "safe_env", False))
+            next_state, reward, cost, terminated, truncated, info = step_env(env, action, getattr(config, "safe_env", False))
+            done = terminated or truncated
             agent.observe(next_state)
             episode_steps += 1
             total_numsteps += 1
             episode_reward += reward
             episode_cost += cost
 
-            # Ignore the "done" signal if it comes from hitting the time horizon.
-            if "_max_episode_steps" in dir(env):
-                mask = 1 if episode_steps == env._max_episode_steps else float(not done)
-            else:
-                mask = 1 if episode_steps == 1000 else float(not done)
+            # Bootstrap through time-limit truncation, but stop at real terminal states.
+            mask = 0.0 if terminated else 1.0
 
             if getattr(config, "safe_env", False):
                 memory.push(state, action, reward, cost, next_state, mask)
@@ -282,7 +282,7 @@ if __name__ == "__main__":
     arg.add_arg("normalize_obs", True, "Running mean/std normalization for observations")
     arg.add_arg("obs_norm_clip", 10.0, "Observation normalization clip value")
     arg.add_arg("obs_norm_eps", 1e-8, "Observation normalization epsilon")
-    arg.add_arg("distributional_critic", True, "Use C51-style distributional critic")
+    arg.add_arg("distributional_critic", False, "Use C51-style distributional critic")
     arg.add_arg("critic_num_atoms", 101, "C51 number of atoms")
     arg.add_arg("critic_v_min", -10, "C51 value support min")
     arg.add_arg("critic_v_max", 150.0, "C51 value support max")

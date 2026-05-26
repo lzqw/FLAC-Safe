@@ -156,7 +156,6 @@ class Policy_flow(nn.Module):
         return action_t, step_energy
     
 
-    @torch.compile
     def sample(self, state, return_velocity=False):
         # sampel an action from the nomarl, mean = 0, std = 1
         device = state.device
@@ -189,7 +188,6 @@ class Policy_flow(nn.Module):
             return action, total_kinetic, raw_action, velocity_action
         return action, total_kinetic, raw_action
 
-    @torch.compile
     def sample_env(self, state):
         # sampel an action from the nomarl, mean = 0, std = 1
         device = state.device

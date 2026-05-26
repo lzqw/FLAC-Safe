@@ -38,5 +38,6 @@ def make_safe_env(env_id: str, train: bool = True):
     env = safety_gymnasium.make(env_id)
     env = SafeRescaleAction(env, -1.0, 1.0)
     env = BinaryCostWrapper(env)
-    env = RewardScalingWrapper(env, get_reward_scale(env_id))
+    if train:
+        env = RewardScalingWrapper(env, get_reward_scale(env_id))
     return env

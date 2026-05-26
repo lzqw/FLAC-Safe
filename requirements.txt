@@ -1,1 +1,6 @@
+numpy
+torch
+gymnasium
 safety-gymnasium
+wandb
+tensorboard

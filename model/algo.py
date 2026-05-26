@@ -253,11 +253,6 @@ class flowAC(object):
         }
 
     def compute_jvp_scd(self, state_batch, action_pi, velocity_action, g_mid):
-        old_flags = []
-        for p in self.safety_critic.parameters():
-            old_flags.append(p.requires_grad)
-            p.requires_grad_(False)
-
         action_for_grad = action_pi.detach().requires_grad_(True)
 
         qc1, qc2 = self.safety_critic(state_batch.detach(), action_for_grad)
@@ -275,10 +270,20 @@ class flowAC(object):
         jvp_loss = (g_mid.detach() * directional.pow(2)).mean()
         grad_norm = grad_q.norm(dim=-1).mean().detach()
 
-        for p, flag in zip(self.safety_critic.parameters(), old_flags):
-            p.requires_grad_(flag)
-
         return jvp_loss, grad_norm
+
+    @staticmethod
+    def set_requires_grad(module, requires_grad):
+        old_flags = []
+        for p in module.parameters():
+            old_flags.append(p.requires_grad)
+            p.requires_grad_(requires_grad)
+        return old_flags
+
+    @staticmethod
+    def restore_requires_grad(module, old_flags):
+        for p, flag in zip(module.parameters(), old_flags):
+            p.requires_grad_(flag)
 
     def update_policy(self, state_batch, current_step_or_updates=0):
         """
@@ -309,19 +314,23 @@ class flowAC(object):
             jvp_enabled = self.safe_env and self.safe_policy_loss and current_step_or_updates >= self.jvp_warmup_steps
 
             if self.safe_env and self.safe_policy_loss:
-                qc1_pi, qc2_pi = self.safety_critic(state_batch, action)
-                qc_pi = torch.max(qc1_pi, qc2_pi)
-                safety_penalty = F.relu(qc_pi - self.safe_threshold)
-                bandwidth = max(self.safe_bandwidth, 1e-6)
-                g_mid = torch.exp(
-                    -((qc_pi.detach() - self.safe_threshold) ** 2)
-                    / (2.0 * bandwidth ** 2)
-                )
-                if jvp_enabled:
-                    jvp_loss, grad_q_norm = self.compute_jvp_scd(
-                        state_batch, action, velocity_action, g_mid
+                safety_flags = self.set_requires_grad(self.safety_critic, False)
+                try:
+                    qc1_pi, qc2_pi = self.safety_critic(state_batch, action)
+                    qc_pi = torch.max(qc1_pi, qc2_pi)
+                    safety_penalty = F.relu(qc_pi - self.safe_threshold)
+                    bandwidth = max(self.safe_bandwidth, 1e-6)
+                    g_mid = torch.exp(
+                        -((qc_pi.detach() - self.safe_threshold) ** 2)
+                        / (2.0 * bandwidth ** 2)
                     )
-                g_mid_mean = g_mid.detach().mean()
+                    if jvp_enabled:
+                        jvp_loss, grad_q_norm = self.compute_jvp_scd(
+                            state_batch, action, velocity_action, g_mid
+                        )
+                    g_mid_mean = g_mid.detach().mean()
+                finally:
+                    self.restore_requires_grad(self.safety_critic, safety_flags)
 
             policy_loss_terms = -min_qf_pi + alpha.detach() * kinetic
             if self.safe_env and self.safe_policy_loss:
