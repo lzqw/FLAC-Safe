@@ -29,7 +29,7 @@ class flowAC(object):
 
         self.policy_type = args.policy
         self.target_update_interval = args.target_update_interval
-        self.device = torch.device(f"cuda:{args.device}" if args.cuda else "cpu")
+        self.device = torch.device(f"cuda:{args.device}" if args.cuda and torch.cuda.is_available() else "cpu")
         self.amp_enabled = args.cuda and torch.cuda.is_available()
         self.amp_dtype = torch.bfloat16
         self.scaler = GradScaler(enabled=self.amp_enabled and self.amp_dtype == torch.float16)
@@ -38,6 +38,15 @@ class flowAC(object):
         self.obs_norm_eps = getattr(args, "obs_norm_eps", 1e-8)
         self.normalize_obs = bool(getattr(args, "normalize_obs", False))
         self.obs_rms = RunningMeanStd(num_inputs, device=self.device) if self.normalize_obs else None
+
+        self.safe_env = bool(getattr(args, "safe_env", False))
+        self.cost_gamma = float(getattr(args, "cost_gamma", 0.97))
+        self.safe_threshold = float(getattr(args, "safe_threshold", 0.1))
+        self.safe_bandwidth = float(getattr(args, "safe_bandwidth", 0.05))
+        self.lambda_safe = float(getattr(args, "lambda_safe", 1.0))
+        self.lambda_jvp = float(getattr(args, "lambda_jvp", 0.05))
+        self.jvp_warmup_steps = int(getattr(args, "jvp_warmup_steps", 20000))
+        self.safe_policy_loss = bool(getattr(args, "safe_policy_loss", True))
 
         # LAC: Target kinetic energy (coef * action_dim)
         target_kinetic_coef = float(getattr(args, "target_kinetic_coef", 2.5))
@@ -93,6 +102,16 @@ class flowAC(object):
             self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
         hard_update(self.critic_target, self.critic)
 
+        if self.safe_env:
+            self.safety_critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
+            self.safety_critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
+            self.safety_critic_optim = optim.Adam(self.safety_critic.parameters(), lr=args.lr)
+            hard_update(self.safety_critic_target, self.safety_critic)
+        else:
+            self.safety_critic = None
+            self.safety_critic_target = None
+            self.safety_critic_optim = None
+
         # ---------------------- Compile Models ----------------------
         if compile_model:
             self.critic = torch.compile(self.critic,mode=mode)
@@ -138,7 +157,6 @@ class flowAC(object):
             return obs
         return self.obs_rms.normalize(obs, clip=self.obs_norm_clip, eps=self.obs_norm_eps)
 
-    @torch.compile(mode=mode)
     def update_critic(self, state_batch, action_batch, reward_batch, next_state_batch, mask_batch):
         """
         Critic update.
@@ -207,18 +225,72 @@ class flowAC(object):
         self.scaler.scale(qf_loss).backward()
         self.scaler.step(self.critic_optim)
         self.scaler.update()
-        return None
+        return {
+            "loss/critic": float(qf_loss.detach().item()),
+        }
 
+    def update_safety_critic(self, state_batch, action_batch, cost_batch, next_state_batch, mask_batch):
+        with torch.no_grad():
+            next_action, _, _ = self.policy.sample(next_state_batch)
+            qc1_next, qc2_next = self.safety_critic_target(next_state_batch, next_action)
+            qc_next = torch.max(qc1_next, qc2_next)
 
-    @torch.compile(mode=mode)
-    def update_policy(self, state_batch):
+            qc_target = cost_batch + mask_batch * (1.0 - cost_batch) * self.cost_gamma * qc_next
+            qc_target = torch.clamp(qc_target, 0.0, 1.0)
+
+        qc1, qc2 = self.safety_critic(state_batch, action_batch)
+        qc_loss = F.mse_loss(qc1, qc_target) + F.mse_loss(qc2, qc_target)
+
+        self.safety_critic_optim.zero_grad()
+        qc_loss.backward()
+        self.safety_critic_optim.step()
+
+        return {
+            "loss/safety_critic": qc_loss.item(),
+            "safety/qc_mean": torch.max(qc1, qc2).detach().mean().item(),
+            "safety/qc_target_mean": qc_target.detach().mean().item(),
+            "safety/cost_batch": cost_batch.detach().mean().item(),
+        }
+
+    def compute_jvp_scd(self, state_batch, action_pi, velocity_action, g_mid):
+        old_flags = []
+        for p in self.safety_critic.parameters():
+            old_flags.append(p.requires_grad)
+            p.requires_grad_(False)
+
+        action_for_grad = action_pi.detach().requires_grad_(True)
+
+        qc1, qc2 = self.safety_critic(state_batch.detach(), action_for_grad)
+        qc = torch.max(qc1, qc2)
+
+        grad_q = torch.autograd.grad(
+            outputs=qc.sum(),
+            inputs=action_for_grad,
+            create_graph=False,
+            retain_graph=True,
+            only_inputs=True,
+        )[0].detach()
+
+        directional = (grad_q * velocity_action).sum(dim=-1, keepdim=True)
+        jvp_loss = (g_mid.detach() * directional.pow(2)).mean()
+        grad_norm = grad_q.norm(dim=-1).mean().detach()
+
+        for p, flag in zip(self.safety_critic.parameters(), old_flags):
+            p.requires_grad_(flag)
+
+        return jvp_loss, grad_norm
+
+    def update_policy(self, state_batch, current_step_or_updates=0):
         """
         LAC policy + temperature update.
         Actor loss:  E[ -Q(s,a) + alpha * kinetic ]
         Alpha update (SAC-style on log_alpha): match mean kinetic to target_kinetic.
         """
         with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp_enabled):
-            action, kinetic, _ = self.policy.sample(state_batch)
+            if self.safe_env and self.safe_policy_loss:
+                action, kinetic, _, velocity_action = self.policy.sample(state_batch, return_velocity=True)
+            else:
+                action, kinetic, _ = self.policy.sample(state_batch)
             alpha = self.log_alpha.exp()
 
             if self.distributional_critic:
@@ -230,7 +302,34 @@ class flowAC(object):
                 qf1_pi, qf2_pi = self.critic(state_batch, action)
                 min_qf_pi = torch.min(qf1_pi, qf2_pi)
 
-            policy_loss = (-min_qf_pi + alpha.detach() * kinetic).mean()
+            safety_penalty = torch.zeros_like(min_qf_pi)
+            jvp_loss = torch.tensor(0.0, device=self.device)
+            grad_q_norm = torch.tensor(0.0, device=self.device)
+            g_mid_mean = torch.tensor(0.0, device=self.device)
+            jvp_enabled = self.safe_env and self.safe_policy_loss and current_step_or_updates >= self.jvp_warmup_steps
+
+            if self.safe_env and self.safe_policy_loss:
+                qc1_pi, qc2_pi = self.safety_critic(state_batch, action)
+                qc_pi = torch.max(qc1_pi, qc2_pi)
+                safety_penalty = F.relu(qc_pi - self.safe_threshold)
+                bandwidth = max(self.safe_bandwidth, 1e-6)
+                g_mid = torch.exp(
+                    -((qc_pi.detach() - self.safe_threshold) ** 2)
+                    / (2.0 * bandwidth ** 2)
+                )
+                if jvp_enabled:
+                    jvp_loss, grad_q_norm = self.compute_jvp_scd(
+                        state_batch, action, velocity_action, g_mid
+                    )
+                g_mid_mean = g_mid.detach().mean()
+
+            policy_loss_terms = -min_qf_pi + alpha.detach() * kinetic
+            if self.safe_env and self.safe_policy_loss:
+                policy_loss_terms = policy_loss_terms + self.lambda_safe * safety_penalty
+
+            policy_loss = policy_loss_terms.mean()
+            if jvp_enabled:
+                policy_loss = policy_loss + self.lambda_jvp * jvp_loss
 
         # Update policy
         self.policy_optim.zero_grad()
@@ -248,47 +347,79 @@ class flowAC(object):
             self.scaler.scale(alpha_loss).backward()
             self.scaler.step(self.alpha_optim)
             self.scaler.update()
-        return None
+        return {
+            "loss/policy": float(policy_loss.detach().item()),
+            "loss/alpha": float(alpha_loss.detach().item()) if self.auto_alpha else 0.0,
+            "train/kinetic": float(kinetic.detach().mean().item()),
+            "safety/safety_penalty": safety_penalty.detach().mean().item(),
+            "loss/jvp_scd": float(jvp_loss.detach().item()),
+            "safety/g_mid_mean": float(g_mid_mean.detach().item()),
+            "safety/grad_q_norm": float(grad_q_norm.detach().item()),
+        }
 
 
     def update_parameters(self, memory, batch_size, updates, total_numsteps=None):
         """
         Update: Critic and Policy updates
         """
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        if self.safe_env:
+            state_batch, action_batch, reward_batch, cost_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
         state_batch = torch.FloatTensor(state_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
         action_batch = torch.FloatTensor(action_batch).to(self.device)
-        reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
-        mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
+        reward_batch = self.ensure_column(torch.FloatTensor(reward_batch).to(self.device))
+        mask_batch = self.ensure_column(torch.FloatTensor(mask_batch).to(self.device))
+        if self.safe_env:
+            cost_batch = self.ensure_column(torch.FloatTensor(cost_batch).to(self.device))
 
         state_batch = self._normalize_obs(state_batch)
         next_state_batch = self._normalize_obs(next_state_batch)
         
-        self.update_critic(state_batch, action_batch, reward_batch, next_state_batch, mask_batch)
+        log_info = self.update_critic(state_batch, action_batch, reward_batch, next_state_batch, mask_batch)
+        if self.safe_env:
+            log_info.update(
+                self.update_safety_critic(state_batch, action_batch, cost_batch, next_state_batch, mask_batch)
+            )
 
         # Update policy and alpha (with delayed update)
         if updates % self.target_update_interval == 0:
-            self.update_policy(state_batch)
+            step_for_jvp = total_numsteps if total_numsteps is not None else updates
+            log_info.update(self.update_policy(state_batch, step_for_jvp))
             with torch.no_grad():
                 soft_update(self.critic_target, self.critic, self.tau)
+                if self.safe_env:
+                    soft_update(self.safety_critic_target, self.safety_critic, self.tau)
 
-        return None
+        return log_info
+
+    @staticmethod
+    def ensure_column(x):
+        if x.dim() == 1:
+            return x.unsqueeze(1)
+        return x
 
     # Save model parameters
     def save_checkpoint(self, path, i_episode):
         ckpt_path = path + '/' + '{}.torch'.format(i_episode)
         print('Saving models to {}'.format(ckpt_path))
-        torch.save({'policy_state_dict': self.policy.state_dict(),
-                    'critic_state_dict': self.critic.state_dict(),
-                    'critic_target_state_dict': self.critic_target.state_dict(),
-                    'critic_optimizer_state_dict': self.critic_optim.state_dict(),
-                    'policy_optimizer_state_dict': self.policy_optim.state_dict(),
-                    'alpha_optimizer_state_dict': self.alpha_optim.state_dict() if self.alpha_optim else None,
-                    'log_alpha': self.log_alpha,
-                    'obs_rms_state_dict': self.obs_rms.state_dict() if self.obs_rms is not None else None,
-                    },
-                    ckpt_path)
+        checkpoint = {'policy_state_dict': self.policy.state_dict(),
+                      'critic_state_dict': self.critic.state_dict(),
+                      'critic_target_state_dict': self.critic_target.state_dict(),
+                      'critic_optimizer_state_dict': self.critic_optim.state_dict(),
+                      'policy_optimizer_state_dict': self.policy_optim.state_dict(),
+                      'alpha_optimizer_state_dict': self.alpha_optim.state_dict() if self.alpha_optim else None,
+                      'log_alpha': self.log_alpha,
+                      'obs_rms_state_dict': self.obs_rms.state_dict() if self.obs_rms is not None else None,
+                      }
+        if self.safe_env:
+            checkpoint.update({
+                'safety_critic_state_dict': self.safety_critic.state_dict(),
+                'safety_critic_target_state_dict': self.safety_critic_target.state_dict(),
+                'safety_critic_optimizer_state_dict': self.safety_critic_optim.state_dict(),
+            })
+        torch.save(checkpoint, ckpt_path)
 
     # Load model parameters
     def load_checkpoint(self, path, i_episode, evaluate=False):
@@ -309,6 +440,12 @@ class flowAC(object):
             if self.alpha_optim is not None and checkpoint.get('alpha_optimizer_state_dict') is not None:
                 self.alpha_optim.load_state_dict(checkpoint['alpha_optimizer_state_dict'])
 
+            if self.safe_env and checkpoint.get('safety_critic_state_dict') is not None:
+                self.safety_critic.load_state_dict(checkpoint['safety_critic_state_dict'])
+                self.safety_critic_target.load_state_dict(checkpoint['safety_critic_target_state_dict'])
+                if checkpoint.get('safety_critic_optimizer_state_dict') is not None:
+                    self.safety_critic_optim.load_state_dict(checkpoint['safety_critic_optimizer_state_dict'])
+
             obs_rms_state_dict = checkpoint.get('obs_rms_state_dict')
             if obs_rms_state_dict is not None:
                 if self.obs_rms is None:
@@ -320,7 +457,13 @@ class flowAC(object):
                 self.policy.eval()
                 self.critic.eval()
                 self.critic_target.eval()
+                if self.safe_env:
+                    self.safety_critic.eval()
+                    self.safety_critic_target.eval()
             else:
                 self.policy.train()
                 self.critic.train()
                 self.critic_target.train()
+                if self.safe_env:
+                    self.safety_critic.train()
+                    self.safety_critic_target.train()

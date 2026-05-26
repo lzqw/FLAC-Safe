@@ -137,7 +137,7 @@ class Policy_flow(nn.Module):
         return x
     
 
-    def step(self, state, action,  time_start, time_end):
+    def step(self, state, action,  time_start, time_end, return_velocity=False):
         """
         Integrate the velocity field from time_start to time_end using midpoint method
         Calculate kinetic energy for LAC algorithm
@@ -151,11 +151,13 @@ class Policy_flow(nn.Module):
         # Calculate kinetic energy: 0.5 * ||v||^2 * dt
         step_energy = 0.5 * torch.sum(velocity_mid**2, dim=-1, keepdim=True) * (time_end - time_start)
 
+        if return_velocity:
+            return action_t, step_energy, velocity_mid
         return action_t, step_energy
     
 
     @torch.compile
-    def sample(self, state):
+    def sample(self, state, return_velocity=False):
         # sampel an action from the nomarl, mean = 0, std = 1
         device = state.device
         dtype = state.dtype
@@ -166,18 +168,25 @@ class Policy_flow(nn.Module):
 
         # Accumulate total kinetic energy
         total_kinetic = torch.zeros(state.shape[0], 1, device=device, dtype=dtype)
+        last_velocity = torch.zeros_like(action)
 
         for i in range(self.steps):
             time_end = time_start + time_step
-            action, step_energy = self.step(state, action, time_start, time_end)
+            if return_velocity:
+                action, step_energy, last_velocity = self.step(state, action, time_start, time_end, return_velocity=True)
+            else:
+                action, step_energy = self.step(state, action, time_start, time_end)
             total_kinetic = total_kinetic + step_energy
             time_start = time_end
 
         # Store raw action before tanh for potential use
         raw_action = action.clone()
         # action = torch.clamp(action,-1.0,1.0)
-        action = torch.tanh(action)
-        action = action * self.action_scale + self.action_bias
+        squashed = torch.tanh(action)
+        action = squashed * self.action_scale + self.action_bias
+        if return_velocity:
+            velocity_action = (1.0 - squashed.pow(2)) * self.action_scale * last_velocity
+            return action, total_kinetic, raw_action, velocity_action
         return action, total_kinetic, raw_action
 
     @torch.compile

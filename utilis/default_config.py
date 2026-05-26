@@ -26,6 +26,16 @@ default_config = Config({
     "target_update_interval": 2, # for delayed policy update and target network update
     "hidden_size": 512,
 
+    "safe_env": False,
+    "cost_gamma": 0.97,
+    "safe_threshold": 0.1,
+    "safe_bandwidth": 0.05,
+    "lambda_safe": 1.0,
+    "lambda_jvp": 0.05,
+    "jvp_warmup_steps": 20000,
+    "binary_cost": True,
+    "safe_policy_loss": True,
+
     "normalize_obs": True,
     "obs_norm_clip": 10.0,
     "obs_norm_eps": 1e-8,
