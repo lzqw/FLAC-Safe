@@ -273,6 +273,7 @@ if __name__ == "__main__":
     arg.add_arg("start_steps", 5000, "Initial random exploration steps")
     arg.add_arg("batch_size", 256, "Batch size")
     arg.add_arg("updates_per_step", 1, "Gradient updates per environment step")
+    arg.add_arg("hidden_size", 512, "Hidden layer size for policy and critics")
     arg.add_arg("eval", True, "Enable evaluation")
     arg.add_arg("eval_numsteps", 10000, "Evaluation interval")
     arg.add_arg("eval_times", 5, "Evaluation episodes")
