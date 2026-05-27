@@ -76,8 +76,10 @@ run_level() {
   esac
 
   local log_file="$LOG_DIR/${tag}.log"
-  local before after peak
+  local before after peak peak_file monitor_pid status
   before="$(gpu_used_mb || echo 0)"
+  peak_file="$(mktemp)"
+  echo "$before" > "$peak_file"
   {
     echo "===== $(date '+%F %T') START $level $tag ====="
     echo "Command: python main.py $COMMON_ARGS $level_args"
@@ -87,13 +89,28 @@ run_level() {
     echo
   } | tee "$log_file"
 
+  (
+    while true; do
+      local_used="$(gpu_used_mb || echo 0)"
+      current_peak="$(cat "$peak_file" 2>/dev/null || echo 0)"
+      if [[ "$local_used" =~ ^[0-9]+$ && "$current_peak" =~ ^[0-9]+$ && "$local_used" -gt "$current_peak" ]]; then
+        echo "$local_used" > "$peak_file"
+      fi
+      sleep 5
+    done
+  ) &
+  monitor_pid="$!"
+
+  set +e
   python main.py $COMMON_ARGS $level_args 2>&1 | tee -a "$log_file"
+  status="${PIPESTATUS[0]}"
+  set -e
+  kill "$monitor_pid" 2>/dev/null || true
+  wait "$monitor_pid" 2>/dev/null || true
 
   after="$(gpu_used_mb || echo 0)"
-  peak="$after"
-  if [[ "$before" =~ ^[0-9]+$ && "$after" =~ ^[0-9]+$ ]]; then
-    peak="$(( after > before ? after : before ))"
-  fi
+  peak="$(cat "$peak_file" 2>/dev/null || echo "$after")"
+  rm -f "$peak_file"
   {
     echo
     echo "[GPU_MEM_AFTER] used_mb=$after"
@@ -102,6 +119,7 @@ run_level() {
     gpu_query || true
     echo "===== $(date '+%F %T') END $level $tag ====="
   } | tee -a "$log_file"
+  return "$status"
 }
 
 if [[ "$LEVEL" == "all" ]]; then
