@@ -10,4 +10,7 @@ checkpoints/
 checkpoint/
 *.pt
 *.pth
+*.mp4
 *.ckpt
+.idea/
+remote_logs/
