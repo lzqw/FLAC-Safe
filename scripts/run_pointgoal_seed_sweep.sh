@@ -2,6 +2,7 @@
 set -euo pipefail
 
 CASE="${1:-all}"
+SEED_ARG="${2:-}"
 LOG_DIR="logs/pointgoal_seed_sweep"
 REPORT_DIR="reports/pointgoal_seed_sweep"
 mkdir -p "$LOG_DIR" "$REPORT_DIR"
@@ -37,18 +38,37 @@ COMMON_ARGS="\
 case_args() {
   local group="$1"
   case "$group" in
-    S0_penalty_only)
+    S0|S0_penalty_only)
       echo "--safe_policy_loss True --lambda_safe 0.5 --lambda_jvp 0 --safe_bandwidth 0.05"
       ;;
-    S1_main_R2D)
+    S1|S1_main_R2D)
       echo "--safe_policy_loss True --lambda_safe 0.5 --lambda_jvp 0.005 --safe_bandwidth 0.05"
       ;;
-    S2_bw010_R2E)
+    S2|S2_bw010_R2E)
       echo "--safe_policy_loss True --lambda_safe 0.5 --lambda_jvp 0.001 --safe_bandwidth 0.10"
       ;;
     *)
       echo "Unknown group: $group" >&2
       echo "Usage: bash scripts/run_pointgoal_seed_sweep.sh GROUP:SEED|all" >&2
+      return 2
+      ;;
+  esac
+}
+
+canonical_group() {
+  local group="$1"
+  case "$group" in
+    S0|S0_penalty_only)
+      echo "S0_penalty_only"
+      ;;
+    S1|S1_main_R2D)
+      echo "S1_main_R2D"
+      ;;
+    S2|S2_bw010_R2E)
+      echo "S2_bw010_R2E"
+      ;;
+    *)
+      echo "Unknown group: $group" >&2
       return 2
       ;;
   esac
@@ -63,6 +83,7 @@ run_case() {
     return 2
   fi
   local args tag log_file
+  group="$(canonical_group "$group")"
   args="$(case_args "$group")"
   tag="${group}_seed${seed}"
   log_file="$LOG_DIR/${tag}.log"
@@ -82,6 +103,8 @@ if [[ "$CASE" == "all" ]]; then
       run_case "${group}:${seed}"
     done
   done
+elif [[ -n "$SEED_ARG" ]]; then
+  run_case "${CASE}:${SEED_ARG}"
 else
   run_case "$CASE"
 fi

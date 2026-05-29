@@ -124,14 +124,14 @@ def main() -> None:
     lines = [
         "# PointGoal Seed Sweep Summary",
         "",
-        "| Group | Seed | lambda_safe | lambda_jvp | safe_bandwidth | Final Eval Reward | Final Eval Cost | Avg Last 3 Reward | Avg Last 3 Cost | Status |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Group | Seed | lambda_safe | lambda_jvp | safe_bandwidth | Final Eval Reward | Final Eval Cost | Avg Last 3 Reward | Avg Last 3 Cost | Status | Log Path |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for row in rows:
         lines.append(
             f"| {row['group']} | {row['seed']} | {row['lambda_safe']:g} | {row['lambda_jvp']:g} | "
             f"{row['safe_bandwidth']:g} | {fmt(row['final_reward'])} | {fmt(row['final_cost'])} | "
-            f"{fmt(row['avg_last3_reward'])} | {fmt(row['avg_last3_cost'])} | {row['status']} |"
+            f"{fmt(row['avg_last3_reward'])} | {fmt(row['avg_last3_cost'])} | {row['status']} | {row['path']} |"
         )
 
     lines += [
@@ -182,6 +182,10 @@ def main() -> None:
         f"- Lowest Avg Last 3 Cost: {lowest_cost['group'] + ' seed ' + str(lowest_cost['seed']) if lowest_cost else 'n/a'}",
         f"- Highest Final Reward: {highest_reward['group'] + ' seed ' + str(highest_reward['seed']) if highest_reward else 'n/a'}",
         f"- Best reward/cost tradeoff: {best_tradeoff['group'] + ' seed ' + str(best_tradeoff['seed']) if best_tradeoff else 'n/a'}",
+        "- Compare group means before deciding whether S1_main_R2D is better than S0_penalty_only.",
+        "- Compare group means before deciding whether S2_bw010_R2E is lower-cost than S1_main_R2D.",
+        "- Move to SafetyCarGoal1-v0 only if S1/S2 remain stable across seeds.",
+        "- Keep normalized JVP, forward JVP, and soft normal masking disabled until this sweep is reviewed.",
     ]
     REPORT.write_text("\n".join(lines) + "\n")
     print(REPORT)

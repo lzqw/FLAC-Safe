@@ -6,9 +6,9 @@ MODE="${1:-plan}"
 GPU_ID="${GPU_ID:-0}"
 GPU_MEM_FRACTION="${GPU_MEM_FRACTION:-0.85}"
 GPU_MEM_RESERVE_GB="${GPU_MEM_RESERVE_GB:-3}"
-PER_RUN_MEM_GB="${PER_RUN_MEM_GB:-auto}"
+PER_RUN_MEM_GB="${PER_RUN_MEM_GB:-4}"
 MAX_PARALLEL="${MAX_PARALLEL:-auto}"
-HARD_MAX_PARALLEL="${HARD_MAX_PARALLEL:-6}"
+HARD_MAX_PARALLEL="${HARD_MAX_PARALLEL:-5}"
 MIN_PARALLEL="${MIN_PARALLEL:-1}"
 
 BATCH_SIZE="${BATCH_SIZE:-4096}"
@@ -106,19 +106,41 @@ tag_for_spec() {
   echo "${group}_seed${seed}"
 }
 
+short_group() {
+  local group="$1"
+  case "$group" in
+    S0_penalty_only) echo "S0" ;;
+    S1_main_R2D) echo "S1" ;;
+    S2_bw010_R2E) echo "S2" ;;
+    *) echo "$group" ;;
+  esac
+}
+
 session_name() {
   local spec="$1"
-  tag_for_spec "$spec" | sed 's/^/pg_seed_/' | tr ':' '_'
+  local group="${spec%%:*}"
+  local seed="${spec##*:}"
+  echo "pg_seed_$(short_group "$group")_${seed}"
 }
 
 is_running() {
   tmux has-session -t "$(session_name "$1")" 2>/dev/null
 }
 
+completed_log() {
+  local spec="$1"
+  local log="$LOG_DIR/$(tag_for_spec "$spec").log"
+  [[ -f "$log" ]] && grep -q " END ${spec%%:*} seed=${spec##*:} " "$log"
+}
+
 start_run() {
   local spec="$1"
   local sess
   sess="$(session_name "$spec")"
+  if completed_log "$spec"; then
+    echo "skip completed $spec"
+    return
+  fi
   if tmux has-session -t "$sess" 2>/dev/null; then
     echo "$sess already exists"
     return
@@ -153,8 +175,22 @@ run_status_check() {
 }
 
 run_batch() {
-  local queue=("$@")
+  local input_queue=("$@")
+  local queue=()
   local n idx active any_running
+  for spec in "${input_queue[@]}"; do
+    if completed_log "$spec"; then
+      echo "skip completed $spec"
+    else
+      queue+=("$spec")
+    fi
+  done
+  if (( ${#queue[@]} == 0 )); then
+    echo "no pending runs"
+    monitor_once
+    run_status_check
+    return
+  fi
   n="$(final_n)"
   echo "dynamic final_N=$n"
   idx=0
