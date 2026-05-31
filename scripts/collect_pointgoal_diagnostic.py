@@ -21,6 +21,10 @@ GROUPS = {
     "PGD2_R2D_update1": {"lambda_safe": 0.5, "lambda_jvp": 0.005, "safe_bandwidth": 0.05, "updates_per_step": 1, "seeds": [0, 1, 2]},
     "PGD3_mid_jvp": {"lambda_safe": 0.5, "lambda_jvp": 0.003, "safe_bandwidth": 0.05, "updates_per_step": 2, "seeds": [0, 1, 2]},
 }
+OPTIONAL_GROUPS = {
+    "PGD4_stronger_safe": {"lambda_safe": 0.7, "lambda_jvp": 0.005, "safe_bandwidth": 0.05, "updates_per_step": 2, "seeds": [0, 1, 2]},
+    "PGD5_stronger_jvp": {"lambda_safe": 0.5, "lambda_jvp": 0.0075, "safe_bandwidth": 0.05, "updates_per_step": 2, "seeds": [0, 1, 2]},
+}
 
 OLD = {
     "S0": {"avg_last3_reward": 22.06, "avg_last3_cost": 53.69, "n": 5},
@@ -152,7 +156,12 @@ def group_stats(rows: list[dict[str, object]], group: str) -> dict[str, object]:
 
 def main() -> None:
     rows: list[dict[str, object]] = []
-    for group, cfg in GROUPS.items():
+    groups = dict(GROUPS)
+    for group, cfg in OPTIONAL_GROUPS.items():
+        if any((LOG_DIR / f"{group}_seed{seed}.log").exists() for seed in cfg["seeds"]):
+            groups[group] = cfg
+
+    for group, cfg in groups.items():
         for seed in cfg["seeds"]:
             path = LOG_DIR / f"{group}_seed{seed}.log"
             parsed = parse_log(path)
@@ -194,7 +203,7 @@ def main() -> None:
         "| Group | Completed | Failed | Final Reward mean/std | Final Cost mean/std | Avg Last 3 Reward mean/std | Avg Last 3 Cost mean/std |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    stats = {group: group_stats(rows, group) for group in GROUPS}
+    stats = {group: group_stats(rows, group) for group in groups}
     for group, stat in stats.items():
         lines.append(
             f"| {group} | {stat['completed']} | {stat['failed']} | "

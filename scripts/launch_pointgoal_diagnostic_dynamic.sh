@@ -33,6 +33,7 @@ group_name() {
     PGD2|PGD2_R2D_update1) echo "PGD2_R2D_update1" ;;
     PGD3|PGD3_mid_jvp) echo "PGD3_mid_jvp" ;;
     PGD4|PGD4_stronger_safe) echo "PGD4_stronger_safe" ;;
+    PGD5|PGD5_stronger_jvp) echo "PGD5_stronger_jvp" ;;
     *) echo "$1" ;;
   esac
 }
@@ -223,6 +224,12 @@ case "$MODE" in
   all)
     run_queue "${RUNS[@]}"
     ;;
+  pgd4)
+    run_queue "PGD4:0" "PGD4:1" "PGD4:2"
+    ;;
+  pgd5)
+    run_queue "PGD5:0" "PGD5:1" "PGD5:2"
+    ;;
   status)
     run_status_check
     ;;
@@ -230,7 +237,7 @@ case "$MODE" in
     stop_sessions
     ;;
   *)
-    echo "Usage: bash scripts/launch_pointgoal_diagnostic_dynamic.sh plan|all|status|stop" >&2
+    echo "Usage: bash scripts/launch_pointgoal_diagnostic_dynamic.sh plan|all|pgd4|pgd5|status|stop" >&2
     exit 2
     ;;
 esac

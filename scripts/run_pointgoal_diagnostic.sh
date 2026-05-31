@@ -55,6 +55,13 @@ case "$GROUP" in
     SAFE_BANDWIDTH="0.05"
     UPDATES_PER_STEP="2"
     ;;
+  PGD5|PGD5_stronger_jvp)
+    GROUP_NAME="PGD5_stronger_jvp"
+    LAMBDA_SAFE="0.5"
+    LAMBDA_JVP="0.0075"
+    SAFE_BANDWIDTH="0.05"
+    UPDATES_PER_STEP="2"
+    ;;
   *)
     echo "Unknown group: $GROUP" >&2
     exit 2
