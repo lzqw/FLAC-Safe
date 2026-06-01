@@ -532,12 +532,18 @@ class flowAC(object):
             self.scaler.scale(alpha_loss).backward()
             self.scaler.step(self.alpha_optim)
             self.scaler.update()
+        jvp_weighted = self.lambda_jvp * jvp_loss if jvp_enabled else torch.tensor(0.0, device=self.device)
+        jvp_scd_value = float(jvp_loss.detach().item())
+        jvp_weighted_value = float(jvp_weighted.detach().item())
         return {
             "loss/policy": float(policy_loss.detach().item()),
             "loss/alpha": float(alpha_loss.detach().item()) if self.auto_alpha else 0.0,
             "train/kinetic": float(kinetic.detach().mean().item()),
             "safety/safety_penalty": safety_penalty.detach().mean().item(),
-            "loss/jvp_scd": float(jvp_loss.detach().item()),
+            "loss/jvp_scd": jvp_scd_value,
+            "loss/jvp_scd_x1e6": jvp_scd_value * 1e6,
+            "loss/jvp_weighted": jvp_weighted_value,
+            "loss/jvp_weighted_x1e6": jvp_weighted_value * 1e6,
             "safety/g_mid_mean": float(g_mid_mean.detach().item()),
             "safety/grad_q_norm": float(grad_q_norm.detach().item()),
             "safety/jvp_denom_mean": float(jvp_denom_mean.detach().item()),
