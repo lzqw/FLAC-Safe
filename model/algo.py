@@ -70,6 +70,17 @@ class flowAC(object):
         self.mask_noise_scale = float(getattr(args, "mask_noise_scale", 0.01))
         self.mask_noise_clip = float(getattr(args, "mask_noise_clip", 0.25))
 
+        self.directional_ref_noise = bool(getattr(args, "directional_ref_noise", False))
+        self.directional_noise_mode = str(getattr(args, "directional_noise_mode", "none"))
+        self.tangent_noise_scale = float(getattr(args, "tangent_noise_scale", 0.05))
+        self.ref_noise_scale = float(getattr(args, "ref_noise_scale", 0.02))
+        self.normal_noise_scale = float(getattr(args, "normal_noise_scale", 0.01))
+        self.directional_noise_warmup_steps = int(getattr(args, "directional_noise_warmup_steps", 10000))
+        self.directional_noise_beta_max = float(getattr(args, "directional_noise_beta_max", 0.5))
+        self.directional_noise_eps = float(getattr(args, "directional_noise_eps", 1e-6))
+        self.directional_noise_clip = float(getattr(args, "directional_noise_clip", 0.3))
+        self._last_explore_stats = self._empty_explore_stats()
+
         # LAC: Target kinetic energy (coef * action_dim)
         target_kinetic_coef = float(getattr(args, "target_kinetic_coef", 2.5))
         self.target_kinetic = target_kinetic_coef * action_space.shape[0]
@@ -156,6 +167,146 @@ class flowAC(object):
         beta = self.mask_beta_max / (1.0 + np.exp(-x))
         return float(beta)
 
+    def _directional_noise_mode_id(self):
+        return {
+            "none": 0.0,
+            "tangent": 1.0,
+            "reward_ref": 2.0,
+            "ref_normal": 3.0,
+        }.get(self.directional_noise_mode, 0.0)
+
+    def _empty_explore_stats(self):
+        return {
+            "explore/directional_noise_enabled": 0.0,
+            "explore/directional_noise_mode_id": 0.0,
+            "explore/noise_tangent_norm": 0.0,
+            "explore/noise_ref_norm": 0.0,
+            "explore/noise_normal_norm": 0.0,
+            "explore/ref_grad_norm": 0.0,
+            "explore/qc_grad_norm": 0.0,
+            "explore/tangent_ratio": 0.0,
+            "explore/g_mid_mean": 0.0,
+            "explore/noise_total_norm": 0.0,
+            "explore/action_delta_norm": 0.0,
+        }
+
+    def _directional_noise_beta(self, total_numsteps):
+        if total_numsteps < self.directional_noise_warmup_steps:
+            return 0.0
+        tau = max(float(self.mask_beta_tau), 1.0)
+        progress = min(1.0, (float(total_numsteps) - float(self.directional_noise_warmup_steps)) / tau)
+        return float(self.directional_noise_beta_max * progress)
+
+    @staticmethod
+    def _is_finite_tensor(value):
+        return value is not None and torch.isfinite(value).all()
+
+    def _critic_scalar(self, state, action):
+        q1, q2 = self.critic(state, action)
+        if self.distributional_critic:
+            q1 = (F.softmax(q1.float(), dim=-1) * self.c51_atoms).sum(dim=-1, keepdim=True)
+            q2 = (F.softmax(q2.float(), dim=-1) * self.c51_atoms).sum(dim=-1, keepdim=True)
+        return torch.min(q1, q2)
+
+    def _directional_reference_noise_action(self, state, action, total_numsteps):
+        stats = self._empty_explore_stats()
+        mode = self.directional_noise_mode
+        stats["explore/directional_noise_mode_id"] = self._directional_noise_mode_id()
+
+        enabled = (
+            self.directional_ref_noise
+            and mode in ("tangent", "reward_ref", "ref_normal")
+            and (not self.safe_env or self.safe_policy_loss)
+            and self.safe_env
+            and self.safety_critic is not None
+            and total_numsteps >= self.directional_noise_warmup_steps
+        )
+        if not enabled:
+            self._last_explore_stats = stats
+            return action
+
+        stats["explore/directional_noise_enabled"] = 1.0
+        safety_flags = self.set_requires_grad(self.safety_critic, False)
+        critic_flags = self.set_requires_grad(self.critic, False)
+        try:
+            with torch.enable_grad():
+                action_for_grad = action.detach().requires_grad_(True)
+                qc = self._qc_scalar(state.detach(), action_for_grad)
+                grad_qc = torch.autograd.grad(
+                    outputs=qc.sum(),
+                    inputs=action_for_grad,
+                    create_graph=False,
+                    retain_graph=True,
+                    only_inputs=True,
+                )[0].detach()
+
+                qc_norm = grad_qc.norm(dim=-1, keepdim=True)
+                stats["explore/qc_grad_norm"] = float(qc_norm.mean().item())
+                if (not self._is_finite_tensor(grad_qc)) or torch.any(qc_norm <= self.directional_noise_eps):
+                    self._last_explore_stats = stats
+                    return action
+
+                normal = grad_qc / (qc_norm + self.directional_noise_eps)
+                xi = torch.randn_like(action)
+                xi_norm = xi.norm(dim=-1, keepdim=True)
+                normal_xi = (normal * xi).sum(dim=-1, keepdim=True)
+                tangent_raw = xi - normal * normal_xi
+                tangent = torch.clamp(
+                    self.tangent_noise_scale * tangent_raw,
+                    -self.directional_noise_clip,
+                    self.directional_noise_clip,
+                )
+
+                ref = torch.zeros_like(action)
+                ref_grad_norm = torch.tensor(0.0, device=self.device)
+                if mode in ("reward_ref", "ref_normal"):
+                    q_reward = self._critic_scalar(state.detach(), action_for_grad)
+                    grad_r = torch.autograd.grad(
+                        outputs=q_reward.sum(),
+                        inputs=action_for_grad,
+                        create_graph=False,
+                        retain_graph=False,
+                        only_inputs=True,
+                    )[0].detach()
+                    ref_grad_norm = grad_r.norm(dim=-1, keepdim=True)
+                    if self._is_finite_tensor(grad_r) and torch.all(ref_grad_norm > self.directional_noise_eps):
+                        ref_raw = grad_r - normal * (normal * grad_r).sum(dim=-1, keepdim=True)
+                        ref_norm = ref_raw.norm(dim=-1, keepdim=True)
+                        if self._is_finite_tensor(ref_raw) and torch.all(ref_norm > self.directional_noise_eps):
+                            ref = torch.clamp(
+                                self.ref_noise_scale * ref_raw / (ref_norm + self.directional_noise_eps),
+                                -self.directional_noise_clip,
+                                self.directional_noise_clip,
+                            )
+
+                normal_noise = torch.zeros_like(action)
+                g_mid = self._compute_g_mid_from_qc(qc.detach())
+                if mode == "ref_normal":
+                    beta = self._directional_noise_beta(total_numsteps)
+                    normal_noise = self.normal_noise_scale * (1.0 - beta * g_mid) * normal * normal_xi
+                    normal_noise = torch.clamp(normal_noise, -self.directional_noise_clip, self.directional_noise_clip)
+
+                total_noise = tangent + ref + normal_noise
+                if not self._is_finite_tensor(total_noise):
+                    total_noise = torch.zeros_like(action)
+                noisy_action = action + total_noise
+
+                stats.update({
+                    "explore/noise_tangent_norm": float(tangent.norm(dim=-1).mean().item()),
+                    "explore/noise_ref_norm": float(ref.norm(dim=-1).mean().item()),
+                    "explore/noise_normal_norm": float(normal_noise.norm(dim=-1).mean().item()),
+                    "explore/ref_grad_norm": float(ref_grad_norm.mean().item()),
+                    "explore/tangent_ratio": float((tangent_raw.norm(dim=-1, keepdim=True) / (xi_norm + self.directional_noise_eps)).mean().item()),
+                    "explore/g_mid_mean": float(g_mid.mean().item()),
+                    "explore/noise_total_norm": float(total_noise.norm(dim=-1).mean().item()),
+                    "explore/action_delta_norm": float((noisy_action - action).norm(dim=-1).mean().item()),
+                })
+                self._last_explore_stats = stats
+                return noisy_action.detach()
+        finally:
+            self.restore_requires_grad(self.safety_critic, safety_flags)
+            self.restore_requires_grad(self.critic, critic_flags)
+
     def _soft_normal_mask_action(self, state, action, noise):
         """Softly attenuate exploration noise along the learned risk normal.
 
@@ -212,7 +363,7 @@ class flowAC(object):
             self.restore_requires_grad(self.safety_critic, flags)
 
     # only use for env step 
-    def select_action(self, state, evaluate=False):
+    def select_action(self, state, evaluate=False, total_numsteps=None):
 
         # Noise schedule for exploration: In all tasks, we set the noise to 0.
         if not evaluate:
@@ -225,10 +376,16 @@ class flowAC(object):
 
         if not evaluate:
             action, _, _ = self.policy.sample_env(state)
-            noise = torch.randn_like(action) * self.mask_noise_scale * self.noise_level
-            noise = torch.clamp(noise, -self.mask_noise_clip, self.mask_noise_clip)
-            action, _ = self._soft_normal_mask_action(state, action, noise)
+            step = self.sample_count if total_numsteps is None else int(total_numsteps)
+            if self.directional_ref_noise and self.directional_noise_mode != "none":
+                action = self._directional_reference_noise_action(state, action, step)
+            else:
+                self._last_explore_stats = self._empty_explore_stats()
+                noise = torch.randn_like(action) * self.mask_noise_scale * self.noise_level
+                noise = torch.clamp(noise, -self.mask_noise_clip, self.mask_noise_clip)
+                action, _ = self._soft_normal_mask_action(state, action, noise)
         else:
+            self._last_explore_stats = self._empty_explore_stats()
             with torch.no_grad():
                 action, _, _ = self.policy.sample_env(state)
         
@@ -585,6 +742,9 @@ class flowAC(object):
                 soft_update(self.critic_target, self.critic, self.tau)
                 if self.safe_env:
                     soft_update(self.safety_critic_target, self.safety_critic, self.tau)
+
+        if self._last_explore_stats:
+            log_info.update(self._last_explore_stats)
 
         return log_info
 

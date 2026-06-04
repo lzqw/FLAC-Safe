@@ -60,9 +60,23 @@ class ARGConfig(Config):
         for k in self._arg_dict:
             arg_name = k.replace(' ', '_').replace('-', '_')
             help_msg = self._arg_help[k] if k in self._arg_help else ""
-            parser.add_argument(f"--{arg_name}", type=str,
-                                default=self._arg_dict[k] if isinstance(self._arg_dict[k], str) else repr(self._arg_dict[k]),
-                                help=help_msg)
+            option_names = [f"--{arg_name}"]
+            hyphen_name = arg_name.replace("_", "-")
+            if hyphen_name != arg_name:
+                option_names.append(f"--{hyphen_name}")
+            if isinstance(self._arg_dict[k], bool):
+                parser.add_argument(
+                    *option_names,
+                    type=str,
+                    nargs="?",
+                    const="True",
+                    default=repr(self._arg_dict[k]),
+                    help=help_msg,
+                )
+            else:
+                parser.add_argument(f"--{arg_name}", *option_names[1:], type=str,
+                                    default=self._arg_dict[k] if isinstance(self._arg_dict[k], str) else repr(self._arg_dict[k]),
+                                    help=help_msg)
 
         pared_args = parser.parse_args().__dict__
 

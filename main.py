@@ -194,7 +194,7 @@ def train_loop(config, msg = "default"):
             if config.start_steps > total_numsteps:
                 action = env.action_space.sample()
             else:
-                action = agent.select_action(state)
+                action = agent.select_action(state, total_numsteps=total_numsteps)
 
             if config.start_steps <= total_numsteps and len(memory) >= config.batch_size:
                 # Number of updates per step in environment
@@ -309,6 +309,15 @@ if __name__ == "__main__":
     arg.add_arg("mask_beta_tau", 10000, "Soft masking beta schedule time constant")
     arg.add_arg("mask_noise_scale", 0.01, "Soft masking exploration noise scale")
     arg.add_arg("mask_noise_clip", 0.25, "Soft masking exploration noise clip")
+    arg.add_arg("directional_ref_noise", False, "Enable directional reference exploration noise")
+    arg.add_arg("directional_noise_mode", "none", "Directional noise mode: none, tangent, reward_ref, ref_normal")
+    arg.add_arg("tangent_noise_scale", 0.05, "Tangential exploration noise scale")
+    arg.add_arg("ref_noise_scale", 0.02, "Reward-gradient reference exploration scale")
+    arg.add_arg("normal_noise_scale", 0.01, "Suppressed safety-normal exploration scale")
+    arg.add_arg("directional_noise_warmup_steps", 10000, "Environment steps before directional reference noise")
+    arg.add_arg("directional_noise_beta_max", 0.5, "Maximum normal suppression beta for directional noise")
+    arg.add_arg("directional_noise_eps", 1e-6, "Numerical epsilon for directional noise normalization")
+    arg.add_arg("directional_noise_clip", 0.3, "Component-wise directional noise clip")
     arg.add_arg("compile_model", False, "Enable torch.compile for critic networks")
     arg.add_arg("binary_cost", True, "Use binary cost wrapper")
     arg.add_arg("safe_policy_loss", True, "Enable safety-aware actor loss")
