@@ -45,6 +45,14 @@ class flowAC(object):
         self.safe_env = bool(getattr(args, "safe_env", False))
         self.cost_gamma = float(getattr(args, "cost_gamma", 0.97))
         self.safe_threshold = float(getattr(args, "safe_threshold", 0.1))
+        self.safety_critic_mode = str(getattr(args, "safety_critic_mode", "cumulative"))
+        if self.safety_critic_mode not in ("cumulative", "cdf"):
+            raise ValueError(f"Unknown safety_critic_mode: {self.safety_critic_mode}")
+        self.qc_geom_mode = str(getattr(args, "qc_geom_mode", "max"))
+        if self.qc_geom_mode not in ("max", "mean"):
+            raise ValueError(f"Unknown qc_geom_mode: {self.qc_geom_mode}")
+        self.cdf_binarize_cost = bool(getattr(args, "cdf_binarize_cost", True))
+        self.cdf_target_clip = bool(getattr(args, "cdf_target_clip", True))
         self.safe_bandwidth = float(getattr(args, "safe_bandwidth", 0.05))
         self.lambda_safe = float(getattr(args, "lambda_safe", 1.0))
         self.lambda_jvp = float(getattr(args, "lambda_jvp", 0.05))
@@ -485,10 +493,23 @@ class flowAC(object):
             qc1_next, qc2_next = self.safety_critic_target(next_state_batch, next_action)
             qc_next = torch.max(qc1_next, qc2_next)
 
-            qc_target = cost_batch + mask_batch * (1.0 - cost_batch) * self.cost_gamma * qc_next
-            qc_target = torch.clamp(qc_target, 0.0, 1.0)
+            if self.safety_critic_mode == "cdf":
+                cost = (cost_batch > 0).float() if self.cdf_binarize_cost else cost_batch.clamp(0.0, 1.0)
+                qc_target = cost + (1.0 - cost) * mask_batch * self.cost_gamma * qc_next
+                if self.cdf_target_clip:
+                    qc_target = qc_target.clamp(0.0, 1.0)
+            else:
+                # Preserve the historical FLAC-Safe safety target exactly for
+                # old runs and checkpoints.
+                qc_target = cost_batch + mask_batch * (1.0 - cost_batch) * self.cost_gamma * qc_next
+                qc_target = torch.clamp(qc_target, 0.0, 1.0)
+            if self.safety_critic_mode == "cdf" and self.cdf_target_clip:
+                qc_target_clip_frac = ((qc_target <= 0.0) | (qc_target >= 1.0)).float().mean()
+            else:
+                qc_target_clip_frac = torch.tensor(0.0, device=self.device)
 
         qc1, qc2 = self.safety_critic(state_batch, action_batch)
+        qc_risk = torch.max(qc1, qc2)
         qc_loss = F.mse_loss(qc1, qc_target) + F.mse_loss(qc2, qc_target)
 
         self.safety_critic_optim.zero_grad()
@@ -497,14 +518,29 @@ class flowAC(object):
 
         return {
             "loss/safety_critic": qc_loss.item(),
-            "safety/qc_mean": torch.max(qc1, qc2).detach().mean().item(),
+            "safety/qc_loss": qc_loss.detach().item(),
+            "safety/safety_critic_mode_id": 1.0 if self.safety_critic_mode == "cdf" else 0.0,
+            "safety/qc_geom_mode_id": 1.0 if self.qc_geom_mode == "mean" else 0.0,
+            "safety/qc_mean": qc_risk.detach().mean().item(),
             "safety/qc_target_mean": qc_target.detach().mean().item(),
+            "safety/qc_target_min": qc_target.detach().min().item(),
+            "safety/qc_target_max": qc_target.detach().max().item(),
+            "safety/qc_target_clip_frac": qc_target_clip_frac.detach().item(),
             "safety/cost_batch": cost_batch.detach().mean().item(),
         }
 
-    def _qc_scalar(self, state_batch, action_batch):
+    def _qc_risk_scalar(self, state_batch, action_batch):
         qc1, qc2 = self.safety_critic(state_batch, action_batch)
         return torch.max(qc1, qc2)
+
+    def _qc_geom_scalar(self, state_batch, action_batch):
+        qc1, qc2 = self.safety_critic(state_batch, action_batch)
+        if self.qc_geom_mode == "mean":
+            return 0.5 * (qc1 + qc2)
+        return torch.max(qc1, qc2)
+
+    def _qc_scalar(self, state_batch, action_batch):
+        return self._qc_risk_scalar(state_batch, action_batch)
 
     def _forward_jvp_directional(self, state_batch, action_base, velocity_action):
         """Compute d Q_C(x,u)[velocity_action] by true forward-mode JVP.
@@ -519,7 +555,7 @@ class flowAC(object):
         action_detached = action_base.detach()
 
         def qc_fn(action_in):
-            return self._qc_scalar(state_detached, action_in)
+            return self._qc_geom_scalar(state_detached, action_in)
 
         _, directional = torch_func_jvp(qc_fn, (action_detached,), (velocity_action,))
         return directional
@@ -527,7 +563,7 @@ class flowAC(object):
     def _grad_dot_directional(self, state_batch, action_pi, velocity_action):
         """Fallback: VJP-style grad-dot-vector directional derivative."""
         action_for_grad = action_pi.detach().requires_grad_(True)
-        qc = self._qc_scalar(state_batch.detach(), action_for_grad)
+        qc = self._qc_geom_scalar(state_batch.detach(), action_for_grad)
         grad_q = torch.autograd.grad(
             outputs=qc.sum(),
             inputs=action_for_grad,
@@ -653,17 +689,24 @@ class flowAC(object):
             if self.safe_env and self.safe_policy_loss:
                 safety_flags = self.set_requires_grad(self.safety_critic, False)
                 try:
-                    qc1_pi, qc2_pi = self.safety_critic(state_batch, action)
-                    qc_pi = torch.max(qc1_pi, qc2_pi)
-                    safety_penalty = F.relu(qc_pi - self.safe_threshold)
-                    g_mid = self._compute_g_mid_from_qc(qc_pi.detach())
+                    qc_pi_risk = self._qc_risk_scalar(state_batch, action)
+                    qc_pi_geom = self._qc_geom_scalar(state_batch, action)
+                    safety_penalty = F.relu(qc_pi_risk - self.safe_threshold)
+                    g_mid = self._compute_g_mid_from_qc(qc_pi_risk.detach())
                     if jvp_enabled:
                         jvp_loss, grad_q_norm, jvp_denom_mean, jvp_directional_abs, jvp_source = self.compute_jvp_scd(
                             state_batch, action, velocity_action, g_mid
                         )
                     g_mid_mean = g_mid.detach().mean()
+                    qc_pi_risk_mean = qc_pi_risk.detach().mean()
+                    qc_pi_geom_mean = qc_pi_geom.detach().mean()
+                    qc_pi_risk_over_threshold = (qc_pi_risk.detach() > self.safe_threshold).float().mean()
                 finally:
                     self.restore_requires_grad(self.safety_critic, safety_flags)
+            else:
+                qc_pi_risk_mean = torch.tensor(0.0, device=self.device)
+                qc_pi_geom_mean = torch.tensor(0.0, device=self.device)
+                qc_pi_risk_over_threshold = torch.tensor(0.0, device=self.device)
 
             policy_loss_terms = -min_qf_pi + alpha.detach() * kinetic
             if self.safe_env and self.safe_policy_loss:
@@ -697,6 +740,11 @@ class flowAC(object):
             "loss/alpha": float(alpha_loss.detach().item()) if self.auto_alpha else 0.0,
             "train/kinetic": float(kinetic.detach().mean().item()),
             "safety/safety_penalty": safety_penalty.detach().mean().item(),
+            "safety/safety_critic_mode_id": 1.0 if self.safety_critic_mode == "cdf" else 0.0,
+            "safety/qc_geom_mode_id": 1.0 if self.qc_geom_mode == "mean" else 0.0,
+            "safety/qc_pi_risk_mean": float(qc_pi_risk_mean.detach().item()),
+            "safety/qc_pi_geom_mean": float(qc_pi_geom_mean.detach().item()),
+            "safety/qc_pi_risk_over_threshold": float(qc_pi_risk_over_threshold.detach().item()),
             "loss/jvp_scd": jvp_scd_value,
             "loss/jvp_scd_x1e6": jvp_scd_value * 1e6,
             "loss/jvp_weighted": jvp_weighted_value,
