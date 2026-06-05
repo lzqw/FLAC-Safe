@@ -73,8 +73,8 @@ start_run() {
   local seed="${spec##*:}"
   local sess
   sess="$(session_name "$spec")"
-  completed_log "$spec" && { echo "skip completed $spec"; return; }
-  tmux has-session -t "$sess" 2>/dev/null && { echo "$sess already exists"; return; }
+  completed_log "$spec" && { echo "skip completed $spec"; return 1; }
+  tmux has-session -t "$sess" 2>/dev/null && { echo "$sess already exists"; return 1; }
   tmux new -d -s "$sess" "cd /root/FLAC-Safe && \
 source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null || source ~/anaconda3/etc/profile.d/conda.sh && \
 conda activate flac && \
@@ -82,6 +82,7 @@ export CUDA_VISIBLE_DEVICES=${GPU_ID} && \
 export WANDB_MODE=\${WANDB_MODE:-offline} && \
 bash scripts/run_pointgoal_goal_tuning.sh ${group} ${seed}"
   echo "started $sess"
+  return 0
 }
 
 monitor_once() {
@@ -114,9 +115,10 @@ run_all() {
       tmux has-session -t "$(session_name "$spec")" 2>/dev/null && active=$((active + 1))
     done
     while (( active < n && idx < ${#queue[@]} )); do
-      start_run "${queue[$idx]}"
+      if start_run "${queue[$idx]}"; then
+        active=$((active + 1))
+      fi
       idx=$((idx + 1))
-      active=$((active + 1))
     done
     monitor_once
     for spec in "${queue[@]}"; do
