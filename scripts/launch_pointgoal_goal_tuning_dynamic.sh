@@ -9,7 +9,11 @@ HARD_MAX_PARALLEL="${HARD_MAX_PARALLEL:-5}"
 MIN_PARALLEL="${MIN_PARALLEL:-1}"
 
 LOG_DIR="logs/pointgoal_goal_tuning"
-MONITOR="$LOG_DIR/gpu_monitor.csv"
+if [[ "$MODE" == "resume_stage_a" ]]; then
+  MONITOR="${MONITOR:-$LOG_DIR/gpu_monitor_resume_stage_a.csv}"
+else
+  MONITOR="${MONITOR:-$LOG_DIR/gpu_monitor.csv}"
+fi
 ERR_RE="Traceback|RuntimeError|NaN|nan|OOM|out of memory"
 mkdir -p "$LOG_DIR" reports/pointgoal_goal_tuning
 
@@ -151,11 +155,11 @@ case "$MODE" in
     queue_specs | tr ' ' '\n' | sed '/^$/d'
     echo "effective parallelism=$(parallel_n)"
     ;;
-  all) run_all ;;
+  all|resume_stage_a) run_all ;;
   status) status ;;
   stop) stop_sessions ;;
   *)
-    echo "Usage: bash scripts/launch_pointgoal_goal_tuning_dynamic.sh plan|all|status|stop" >&2
+    echo "Usage: bash scripts/launch_pointgoal_goal_tuning_dynamic.sh plan|all|resume_stage_a|status|stop" >&2
     exit 2
     ;;
 esac
