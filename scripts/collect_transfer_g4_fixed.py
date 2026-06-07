@@ -256,9 +256,10 @@ def parse_monitor() -> dict[str, str]:
         reader = csv.DictReader(handle)
         for row in reader:
             try:
-                memory_used = numeric(row.get("memory.used [MiB]"))
-                gpu_util = numeric(row.get("utilization.gpu [%]"))
-                memory_total = numeric(row.get("memory.total [MiB]"))
+                clean_row = {key.strip(): value for key, value in row.items() if key is not None}
+                memory_used = numeric(clean_row.get("memory.used [MiB]"))
+                gpu_util = numeric(clean_row.get("utilization.gpu [%]"))
+                memory_total = numeric(clean_row.get("memory.total [MiB]"))
                 if memory_used is not None:
                     used.append(memory_used)
                 if gpu_util is not None:
