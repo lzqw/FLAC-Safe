@@ -242,6 +242,13 @@ def group_stats(env_key: str, rows: list[dict[str, object]]) -> dict[str, object
 def parse_monitor() -> dict[str, str]:
     if not MONITOR.exists():
         return {}
+
+    def numeric(value: str | None) -> float | None:
+        if value is None:
+            return None
+        match = re.search(NUM_RE, value)
+        return float(match.group(0)) if match else None
+
     used = []
     util = []
     total = None
@@ -249,9 +256,15 @@ def parse_monitor() -> dict[str, str]:
         reader = csv.DictReader(handle)
         for row in reader:
             try:
-                used.append(float(row["memory.used [MiB]"]))
-                util.append(float(row["utilization.gpu [%]"]))
-                total = float(row["memory.total [MiB]"])
+                memory_used = numeric(row.get("memory.used [MiB]"))
+                gpu_util = numeric(row.get("utilization.gpu [%]"))
+                memory_total = numeric(row.get("memory.total [MiB]"))
+                if memory_used is not None:
+                    used.append(memory_used)
+                if gpu_util is not None:
+                    util.append(gpu_util)
+                if memory_total is not None:
+                    total = memory_total
             except (KeyError, TypeError, ValueError):
                 continue
     if not used:

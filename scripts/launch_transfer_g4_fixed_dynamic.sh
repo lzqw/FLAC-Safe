@@ -177,9 +177,9 @@ run_status_check() {
   echo "===== gpu ====="
   nvidia-smi -i "$GPU_ID" --query-gpu=timestamp,memory.used,memory.total,utilization.gpu,utilization.memory,power.draw,temperature.gpu --format=csv || true
   echo "===== recent transfer progress ====="
-  grep -E "Env: Safety|Episode:|total numsteps| START | END " "$LOG_DIR"/*.log 2>/dev/null | tail -n 160 || true
+  grep -E "Env: Safety|Episode:|total numsteps| START | END " "$LOG_DIR"/T*_G4_fixed_main_seed*.log "$LOG_DIR"/smoke_*.log 2>/dev/null | tail -n 160 || true
   echo "===== failed transfer logs ====="
-  grep -E "$ERR_RE" "$LOG_DIR"/*.log 2>/dev/null || true
+  grep -E "$ERR_RE" "$LOG_DIR"/T*_G4_fixed_main_seed*.log "$LOG_DIR"/smoke_*.log 2>/dev/null || true
   echo "===== env resolution ====="
   tail -n 40 "$RESOLUTION_LOG" 2>/dev/null || true
 }
