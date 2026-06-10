@@ -5,7 +5,7 @@ GROUP="${1:-}"
 SEED="${2:-}"
 
 if [[ -z "$GROUP" || -z "$SEED" ]]; then
-  echo "Usage: bash scripts/run_cargoal1_local_tuning.sh CG1_A1|CG1_A2|CG1_A3 seed" >&2
+  echo "Usage: bash scripts/run_cargoal1_local_tuning.sh CG1_A1|CG1_A2|CG1_A3|CG1_C1|CG1_C2|CG1_C3|CG1_C4|CG1_C5 seed" >&2
   exit 2
 fi
 
@@ -51,6 +51,46 @@ case "$GROUP" in
     SAFE_THRESHOLD="0.05"
     LAMBDA_SAFE="1.0"
     LAMBDA_JVP="0.003"
+    ;;
+  CG1_C1|CG1_C1_safe06)
+    GROUP_NAME="CG1_C1_safe06"
+    SAFE_THRESHOLD="0.05"
+    LAMBDA_SAFE="0.6"
+    LAMBDA_JVP="0.003"
+    SAFE_BANDWIDTH="0.05"
+    NUM_STEPS="120000"
+    ;;
+  CG1_C2|CG1_C2_safe05)
+    GROUP_NAME="CG1_C2_safe05"
+    SAFE_THRESHOLD="0.05"
+    LAMBDA_SAFE="0.5"
+    LAMBDA_JVP="0.003"
+    SAFE_BANDWIDTH="0.05"
+    NUM_STEPS="120000"
+    ;;
+  CG1_C3|CG1_C3_thr007)
+    GROUP_NAME="CG1_C3_thr007"
+    SAFE_THRESHOLD="0.07"
+    LAMBDA_SAFE="0.7"
+    LAMBDA_JVP="0.003"
+    SAFE_BANDWIDTH="0.05"
+    NUM_STEPS="120000"
+    ;;
+  CG1_C4|CG1_C4_long_G4)
+    GROUP_NAME="CG1_C4_long_G4"
+    SAFE_THRESHOLD="0.05"
+    LAMBDA_SAFE="0.7"
+    LAMBDA_JVP="0.003"
+    SAFE_BANDWIDTH="0.05"
+    NUM_STEPS="200000"
+    ;;
+  CG1_C5|CG1_C5_wider_band)
+    GROUP_NAME="CG1_C5_wider_band"
+    SAFE_THRESHOLD="0.05"
+    LAMBDA_SAFE="0.7"
+    LAMBDA_JVP="0.003"
+    SAFE_BANDWIDTH="0.075"
+    NUM_STEPS="120000"
     ;;
   *)
     echo "Unknown group: $GROUP" >&2

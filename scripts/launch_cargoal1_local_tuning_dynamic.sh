@@ -19,15 +19,22 @@ group_name() {
     CG1_A1|CG1_A1_less_conservative) echo "CG1_A1_less_conservative" ;;
     CG1_A2|CG1_A2_stronger_jvp) echo "CG1_A2_stronger_jvp" ;;
     CG1_A3|CG1_A3_stronger_safe) echo "CG1_A3_stronger_safe" ;;
+    CG1_C1|CG1_C1_safe06) echo "CG1_C1_safe06" ;;
+    CG1_C2|CG1_C2_safe05) echo "CG1_C2_safe05" ;;
+    CG1_C3|CG1_C3_thr007) echo "CG1_C3_thr007" ;;
+    CG1_C4|CG1_C4_long_G4) echo "CG1_C4_long_G4" ;;
+    CG1_C5|CG1_C5_wider_band) echo "CG1_C5_wider_band" ;;
     *) echo "$1" ;;
   esac
 }
 
 queue_specs() {
   printf '%s\n' \
-    CG1_A1:0 CG1_A1:1 \
-    CG1_A2:0 CG1_A2:1 \
-    CG1_A3:0 CG1_A3:1
+    CG1_C1:0 CG1_C1:1 \
+    CG1_C2:0 CG1_C2:1 \
+    CG1_C3:0 CG1_C3:1 \
+    CG1_C5:0 CG1_C5:1 \
+    CG1_C4:0 CG1_C4:1
 }
 
 tag_for_spec() {

@@ -24,6 +24,10 @@ OK_REWARD = 16.0
 OK_COST = 60.0
 BAD_REWARD = 12.0
 BAD_COST = 80.0
+G4_FIXED_REWARD = 17.98
+G4_FIXED_COST = 50.24
+PPO_BASELINE_REWARD = 25.49
+PPO_BASELINE_COST = 54.218
 
 GROUPS = {
     "CG1_A1_less_conservative": {
@@ -31,21 +35,56 @@ GROUPS = {
         "lambda_safe": 0.7,
         "lambda_jvp": 0.003,
         "safe_bandwidth": 0.05,
-        "seeds": [0, 1],
+        "planned_seeds": [0, 1],
     },
     "CG1_A2_stronger_jvp": {
         "safe_threshold": 0.05,
         "lambda_safe": 0.7,
         "lambda_jvp": 0.0035,
         "safe_bandwidth": 0.05,
-        "seeds": [0, 1],
+        "planned_seeds": [0, 1],
     },
     "CG1_A3_stronger_safe": {
         "safe_threshold": 0.05,
         "lambda_safe": 1.0,
         "lambda_jvp": 0.003,
         "safe_bandwidth": 0.05,
-        "seeds": [0, 1],
+        "planned_seeds": [0, 1],
+    },
+    "CG1_C1_safe06": {
+        "safe_threshold": 0.05,
+        "lambda_safe": 0.6,
+        "lambda_jvp": 0.003,
+        "safe_bandwidth": 0.05,
+        "planned_seeds": [0, 1],
+    },
+    "CG1_C2_safe05": {
+        "safe_threshold": 0.05,
+        "lambda_safe": 0.5,
+        "lambda_jvp": 0.003,
+        "safe_bandwidth": 0.05,
+        "planned_seeds": [0, 1],
+    },
+    "CG1_C3_thr007": {
+        "safe_threshold": 0.07,
+        "lambda_safe": 0.7,
+        "lambda_jvp": 0.003,
+        "safe_bandwidth": 0.05,
+        "planned_seeds": [0, 1],
+    },
+    "CG1_C5_wider_band": {
+        "safe_threshold": 0.05,
+        "lambda_safe": 0.7,
+        "lambda_jvp": 0.003,
+        "safe_bandwidth": 0.075,
+        "planned_seeds": [0, 1],
+    },
+    "CG1_C4_long_G4": {
+        "safe_threshold": 0.05,
+        "lambda_safe": 0.7,
+        "lambda_jvp": 0.003,
+        "safe_bandwidth": 0.05,
+        "planned_seeds": [0, 1],
     },
 }
 
@@ -86,6 +125,17 @@ def mean_std(values: list[float | None]) -> tuple[float | None, float | None]:
 
 def fmt_mean_std(pair: tuple[float | None, float | None]) -> str:
     return f"{fmt(pair[0])} / {fmt(pair[1])}"
+
+
+def discover_seeds(group: str, planned: list[int]) -> list[int]:
+    seeds = set(planned)
+    if LOG_DIR.exists():
+        prefix = f"{group}_seed"
+        for path in LOG_DIR.glob(f"{prefix}*.log"):
+            suffix = path.name.removeprefix(prefix).removesuffix(".log")
+            if suffix.isdigit():
+                seeds.add(int(suffix))
+    return sorted(seeds)
 
 
 def parse_metric(text: str, key: str) -> float | None:
@@ -139,8 +189,12 @@ def decide(avg_reward: float | None, avg_cost: float | None, complete: int, expe
         return "pending"
     if avg_cost is None or avg_reward is None:
         return "no_data"
+    if avg_reward >= 20.0 and avg_cost <= PPO_BASELINE_COST:
+        return "ppo_competitive"
     if avg_reward >= GOOD_REWARD and avg_cost <= GOOD_COST:
         return "pilot_good"
+    if avg_reward > G4_FIXED_REWARD and avg_cost <= OK_COST:
+        return "improved_candidate"
     if avg_reward >= OK_REWARD and avg_cost <= OK_COST:
         return "pilot_ok"
     if avg_cost > BAD_COST or avg_reward < BAD_REWARD:
@@ -152,7 +206,7 @@ def group_stats(rows: list[dict[str, object]], group: str) -> dict[str, object]:
     group_rows = [row for row in rows if row["group"] == group]
     complete = [row for row in group_rows if row["status"] == "completed"]
     failed = [row for row in group_rows if str(row["status"]).startswith("failed")]
-    expected = len(GROUPS[group]["seeds"])
+    expected = len(group_rows)
     fr = mean_std([row.get("final_reward") for row in complete])  # type: ignore[list-item]
     fc = mean_std([row.get("final_cost") for row in complete])  # type: ignore[list-item]
     ar = mean_std([row.get("avg_last3_reward") for row in complete])  # type: ignore[list-item]
@@ -217,13 +271,22 @@ def best_group(stats: dict[str, dict[str, object]]) -> str:
     ]
     if not ranked:
         return "n/a"
-    preferred = [group for group in ranked if stats[group]["decision"] in ("pilot_good", "pilot_ok")]
+    preferred = [
+        group
+        for group in ranked
+        if stats[group]["decision"] in ("ppo_competitive", "pilot_good", "improved_candidate", "pilot_ok")
+    ]
     pool = preferred if preferred else ranked
+    decision_rank = {
+        "ppo_competitive": 4,
+        "pilot_good": 3,
+        "improved_candidate": 2,
+        "pilot_ok": 1,
+    }
     return max(
         pool,
         key=lambda group: (
-            stats[group]["decision"] == "pilot_good",
-            stats[group]["decision"] == "pilot_ok",
+            decision_rank.get(str(stats[group]["decision"]), 0),
             -(stats[group]["avg_last3_cost"][0] or float("inf")),
             stats[group]["avg_last3_reward"][0] or float("-inf"),
         ),
@@ -231,17 +294,29 @@ def best_group(stats: dict[str, dict[str, object]]) -> str:
 
 
 def main() -> None:
-    rows = [parse_log(group, seed) for group, cfg in GROUPS.items() for seed in cfg["seeds"]]
+    group_seeds = {
+        group: discover_seeds(group, list(cfg["planned_seeds"]))  # type: ignore[arg-type]
+        for group, cfg in GROUPS.items()
+    }
+    rows = [parse_log(group, seed) for group, seeds in group_seeds.items() for seed in seeds]
     stats = {group: group_stats(rows, group) for group in GROUPS}
     monitor = parse_monitor()
     best = best_group(stats)
-    any_good = any(stat["decision"] == "pilot_good" for stat in stats.values())
+    any_good = any(stat["decision"] in ("ppo_competitive", "pilot_good") for stat in stats.values())
+    expand_groups = [
+        group
+        for group, stat in stats.items()
+        if stat["decision"] in ("ppo_competitive", "pilot_good", "improved_candidate")
+    ]
 
     lines = [
         "# CarGoal1 Local Tuning Summary",
         "",
         f"Pilot good: Avg Last 3 Reward >= {GOOD_REWARD} and Avg Last 3 Cost <= {GOOD_COST}.",
         f"Pilot ok: Avg Last 3 Reward >= {OK_REWARD} and Avg Last 3 Cost <= {OK_COST}.",
+        f"PPO-competitive: Avg Last 3 Reward >= 20.0 and Avg Last 3 Cost <= {PPO_BASELINE_COST}.",
+        f"G4 fixed reference: Avg Last 3 Reward = {G4_FIXED_REWARD}, Avg Last 3 Cost = {G4_FIXED_COST}.",
+        f"PPO baseline reference: Ret = {PPO_BASELINE_REWARD}, Cost = {PPO_BASELINE_COST}.",
         f"Bad: Avg Last 3 Cost > {BAD_COST} or Avg Last 3 Reward < {BAD_REWARD}.",
         "",
         "| Group | safe_threshold | lambda_safe | lambda_jvp | safe_bandwidth | Seeds | Final Reward mean/std | Final Cost mean/std | Avg Last 3 Reward mean/std | Avg Last 3 Cost mean/std | weighted JVP | qc target mean | qc risk over threshold | Status | Decision |",
@@ -276,7 +351,7 @@ def main() -> None:
         "## Decisions",
         f"- Best CarGoal1 group: {best}",
         f"- Whether CarGoal1 pilot_good: {'yes' if any_good else 'no'}",
-        "- Whether to expand seeds: " + ("best pilot_good group seed2" if any_good else "no"),
+        "- Whether to expand seeds: " + (", ".join(f"{group} seed2" for group in expand_groups) if expand_groups else "no"),
         "- Whether CarGoal2 tuning is needed: no automatic CarGoal2 tuning.",
         "",
         "## GPU",
@@ -304,6 +379,7 @@ def main() -> None:
         "",
         f"- Best CarGoal1 group: {best}",
         f"- CarGoal1 pilot_good: {'yes' if any_good else 'no'}",
+        "- Expand seeds: " + (", ".join(f"{group} seed2" for group in expand_groups) if expand_groups else "no"),
     ]
     for group, stat in stats.items():
         decision_lines.append(
