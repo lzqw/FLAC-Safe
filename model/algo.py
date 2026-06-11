@@ -67,6 +67,14 @@ class flowAC(object):
         self.jvp_norm_mode = str(getattr(args, "jvp_norm_mode", "hutchinson"))
         self.jvp_hutchinson_samples = int(getattr(args, "jvp_hutchinson_samples", 1))
         self.jvp_eps = float(getattr(args, "jvp_eps", 1e-6))
+        self.soft_feasibility_gate = bool(getattr(args, "soft_feasibility_gate", False))
+        self.feas_gate_tau = float(getattr(args, "feas_gate_tau", 0.05))
+        self.feas_gate_detach = bool(getattr(args, "feas_gate_detach", True))
+        self.feas_gate_reward_floor = float(getattr(args, "feas_gate_reward_floor", 0.2))
+        if self.feas_gate_tau <= 0:
+            raise ValueError("feas_gate_tau must be positive")
+        if not 0.0 <= self.feas_gate_reward_floor <= 1.0:
+            raise ValueError("feas_gate_reward_floor must be in [0, 1]")
 
         # Optional real-interaction soft normal masking. This is deliberately
         # separated from the training-time JVP-SCD objective: training can use
@@ -684,6 +692,14 @@ class flowAC(object):
             jvp_directional_abs = torch.tensor(0.0, device=self.device)
             jvp_source = torch.tensor(0.0, device=self.device)
             g_mid_mean = torch.tensor(0.0, device=self.device)
+            feas_gate_mean = torch.tensor(0.0, device=self.device)
+            feas_gate_min = torch.tensor(0.0, device=self.device)
+            feas_gate_max = torch.tensor(0.0, device=self.device)
+            reward_weight_mean = torch.tensor(1.0, device=self.device)
+            safe_weight_mean = torch.tensor(0.0, device=self.device)
+            feas_gate_risky_frac = torch.tensor(0.0, device=self.device)
+            reward_weight = torch.ones_like(min_qf_pi)
+            safe_weight = torch.ones_like(min_qf_pi)
             jvp_enabled = self.safe_env and self.safe_policy_loss and current_step_or_updates >= self.jvp_warmup_steps
 
             if self.safe_env and self.safe_policy_loss:
@@ -701,6 +717,19 @@ class flowAC(object):
                     qc_pi_risk_mean = qc_pi_risk.detach().mean()
                     qc_pi_geom_mean = qc_pi_geom.detach().mean()
                     qc_pi_risk_over_threshold = (qc_pi_risk.detach() > self.safe_threshold).float().mean()
+                    if self.soft_feasibility_gate:
+                        zeta = torch.sigmoid((self.safe_threshold - qc_pi_risk) / self.feas_gate_tau)
+                        if self.feas_gate_detach:
+                            zeta = zeta.detach()
+                        reward_weight = self.feas_gate_reward_floor + (1.0 - self.feas_gate_reward_floor) * zeta
+                        safe_weight = 1.0 - zeta
+                        zeta_detached = zeta.detach()
+                        feas_gate_mean = zeta_detached.mean()
+                        feas_gate_min = zeta_detached.min()
+                        feas_gate_max = zeta_detached.max()
+                        reward_weight_mean = reward_weight.detach().mean()
+                        safe_weight_mean = safe_weight.detach().mean()
+                        feas_gate_risky_frac = (qc_pi_risk.detach() > self.safe_threshold).float().mean()
                 finally:
                     self.restore_requires_grad(self.safety_critic, safety_flags)
             else:
@@ -708,9 +737,15 @@ class flowAC(object):
                 qc_pi_geom_mean = torch.tensor(0.0, device=self.device)
                 qc_pi_risk_over_threshold = torch.tensor(0.0, device=self.device)
 
-            policy_loss_terms = -min_qf_pi + alpha.detach() * kinetic
+            if self.safe_env and self.safe_policy_loss and self.soft_feasibility_gate:
+                policy_loss_terms = -reward_weight * min_qf_pi + alpha.detach() * kinetic
+            else:
+                policy_loss_terms = -min_qf_pi + alpha.detach() * kinetic
             if self.safe_env and self.safe_policy_loss:
-                policy_loss_terms = policy_loss_terms + self.lambda_safe * safety_penalty
+                if self.soft_feasibility_gate:
+                    policy_loss_terms = policy_loss_terms + safe_weight * self.lambda_safe * safety_penalty
+                else:
+                    policy_loss_terms = policy_loss_terms + self.lambda_safe * safety_penalty
 
             policy_loss = policy_loss_terms.mean()
             if jvp_enabled:
@@ -745,6 +780,13 @@ class flowAC(object):
             "safety/qc_pi_risk_mean": float(qc_pi_risk_mean.detach().item()),
             "safety/qc_pi_geom_mean": float(qc_pi_geom_mean.detach().item()),
             "safety/qc_pi_risk_over_threshold": float(qc_pi_risk_over_threshold.detach().item()),
+            "safety/soft_feasibility_gate_enabled": 1.0 if self.soft_feasibility_gate else 0.0,
+            "safety/feas_gate_mean": float(feas_gate_mean.detach().item()),
+            "safety/feas_gate_min": float(feas_gate_min.detach().item()),
+            "safety/feas_gate_max": float(feas_gate_max.detach().item()),
+            "safety/reward_weight_mean": float(reward_weight_mean.detach().item()),
+            "safety/safe_weight_mean": float(safe_weight_mean.detach().item()),
+            "safety/feas_gate_risky_frac": float(feas_gate_risky_frac.detach().item()),
             "loss/jvp_scd": jvp_scd_value,
             "loss/jvp_scd_x1e6": jvp_scd_value * 1e6,
             "loss/jvp_weighted": jvp_weighted_value,
