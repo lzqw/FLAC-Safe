@@ -63,6 +63,7 @@ default_config = Config({
     "directional_noise_clip": 0.3,
     "binary_cost": True,
     "safe_policy_loss": True,
+    "diagnose_safety_geometry": False,
 
     "target_kinetic_coef": 2.5,
     "init_log_alpha": -2.0,

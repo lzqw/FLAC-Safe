@@ -329,6 +329,7 @@ if __name__ == "__main__":
     arg.add_arg("compile_model", False, "Enable torch.compile for critic networks")
     arg.add_arg("binary_cost", True, "Use binary cost wrapper")
     arg.add_arg("safe_policy_loss", True, "Enable safety-aware actor loss")
+    arg.add_arg("diagnose_safety_geometry", False, "Enable safety geometry diagnostics in diagnostic scripts")
     arg.parser()
 
     print("CUDA_VISIBLE_DEVICES:", os.environ.get("CUDA_VISIBLE_DEVICES"))
