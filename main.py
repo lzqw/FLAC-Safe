@@ -135,6 +135,32 @@ def evaluation(agent, env, total_numsteps, writer, best_reward, video_path=None)
     
     return avg_reward
 
+def maybe_print_safety_q_diagnostics(config, log_info, total_numsteps, update_index=0):
+    if not getattr(config, "diagnose_safety_q_geometry", False):
+        return
+    if update_index != 0 or total_numsteps % 1000 != 0:
+        return
+    keys = [
+        "safety_q/weight_mean",
+        "safety_q/boundary_mask_frac",
+        "safety_q/cost_mask_frac",
+        "safety_q/grad_norm_mean",
+        "safety_q/zero_grad_frac",
+        "safety_q/mono_plus_frac",
+        "safety_q/mono_minus_frac",
+        "safety_q/fd_slope_mean",
+        "safety_q/jvp_mean",
+        "safety_q/normalized_jvp_mean",
+        "safety_q/extra_updates",
+        "safety_q/extra_loss_mean",
+    ]
+    fields = []
+    for key in keys:
+        if key in log_info:
+            fields.append(f"{key}={float(log_info[key]):.8g}")
+    if fields:
+        print(f"SAFETY_Q step={total_numsteps} " + " ".join(fields), flush=True)
+
 def train_loop(config, msg = "default"):
     # set seed
     env = make_env(config.task, getattr(config, "safe_env", False), train=True)
@@ -203,6 +229,7 @@ def train_loop(config, msg = "default"):
                     log_info = agent.update_parameters(memory, config.batch_size, updates, total_numsteps)
                     if log_info:
                         wandb.log(log_info, step=total_numsteps)
+                        maybe_print_safety_q_diagnostics(config, log_info, total_numsteps, i)
                     updates += 1
 
             next_state, reward, cost, terminated, truncated, info = step_env(env, action, getattr(config, "safe_env", False))

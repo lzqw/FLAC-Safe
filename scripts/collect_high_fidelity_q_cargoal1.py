@@ -115,6 +115,7 @@ def discover_seeds(group: str, planned: list[int]) -> list[int]:
 
 def parse_metric(text: str, key: str) -> float | None:
     values = re.findall(r"wandb:\s+" + re.escape(key) + r"\s+(" + NUM_RE + r")\b", text, flags=re.I)
+    values.extend(re.findall(re.escape(key) + r"=(" + NUM_RE + r")\b", text))
     return float(values[-1]) if values else None
 
 
