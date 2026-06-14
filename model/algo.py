@@ -76,6 +76,25 @@ class flowAC(object):
         if not 0.0 <= self.feas_gate_reward_floor <= 1.0:
             raise ValueError("feas_gate_reward_floor must be in [0, 1]")
 
+        self.high_fidelity_safety_q = bool(getattr(args, "high_fidelity_safety_q", False))
+        self.safety_q_priority = bool(getattr(args, "safety_q_priority", False))
+        self.safety_q_cost_weight = float(getattr(args, "safety_q_cost_weight", 2.0))
+        self.safety_q_boundary_weight = float(getattr(args, "safety_q_boundary_weight", 3.0))
+        self.safety_q_td_weight = float(getattr(args, "safety_q_td_weight", 0.0))
+        self.safety_q_max_weight = float(getattr(args, "safety_q_max_weight", 5.0))
+        self.safety_q_extra_updates = int(getattr(args, "safety_q_extra_updates", 0))
+        self.safety_q_boundary_width = float(getattr(args, "safety_q_boundary_width", 0.05))
+        self.diagnose_safety_q_geometry = bool(getattr(args, "diagnose_safety_q_geometry", False))
+        self.safety_q_fd_eps = float(getattr(args, "safety_q_fd_eps", 0.01))
+        if self.safety_q_max_weight < 1.0:
+            raise ValueError("safety_q_max_weight must be >= 1")
+        if self.safety_q_extra_updates < 0:
+            raise ValueError("safety_q_extra_updates must be >= 0")
+        if self.safety_q_boundary_width <= 0:
+            raise ValueError("safety_q_boundary_width must be positive")
+        if self.safety_q_fd_eps <= 0:
+            raise ValueError("safety_q_fd_eps must be positive")
+
         # Optional real-interaction soft normal masking. This is deliberately
         # separated from the training-time JVP-SCD objective: training can use
         # JVP only, while environment sampling can use an explicit VJP normal.
@@ -518,7 +537,33 @@ class flowAC(object):
 
         qc1, qc2 = self.safety_critic(state_batch, action_batch)
         qc_risk = torch.max(qc1, qc2)
-        qc_loss = F.mse_loss(qc1, qc_target) + F.mse_loss(qc2, qc_target)
+        td1 = qc1 - qc_target
+        td2 = qc2 - qc_target
+        loss1_unweighted = td1.pow(2)
+        loss2_unweighted = td2.pow(2)
+        qc_loss_unweighted = loss1_unweighted.mean() + loss2_unweighted.mean()
+
+        priority_enabled = self.high_fidelity_safety_q and self.safety_q_priority
+        if priority_enabled:
+            with torch.no_grad():
+                q_score = qc_risk.detach()
+                boundary_mask = (torch.abs(q_score - self.safe_threshold) < self.safety_q_boundary_width).float()
+                cost_mask = (cost_batch > 0).float()
+                td_abs = torch.max(td1.detach().abs(), td2.detach().abs())
+                weight = (
+                    1.0
+                    + self.safety_q_cost_weight * cost_mask
+                    + self.safety_q_boundary_weight * boundary_mask
+                    + self.safety_q_td_weight * td_abs
+                )
+                weight = weight.clamp(1.0, self.safety_q_max_weight)
+            qc_loss = (weight * loss1_unweighted).mean() + (weight * loss2_unweighted).mean()
+        else:
+            boundary_mask = torch.zeros_like(qc_risk)
+            cost_mask = (cost_batch > 0).float()
+            td_abs = torch.max(td1.detach().abs(), td2.detach().abs())
+            weight = torch.ones_like(qc_risk)
+            qc_loss = qc_loss_unweighted
 
         self.safety_critic_optim.zero_grad()
         qc_loss.backward()
@@ -535,7 +580,102 @@ class flowAC(object):
             "safety/qc_target_max": qc_target.detach().max().item(),
             "safety/qc_target_clip_frac": qc_target_clip_frac.detach().item(),
             "safety/cost_batch": cost_batch.detach().mean().item(),
+            "safety_q/priority_enabled": 1.0 if priority_enabled else 0.0,
+            "safety_q/weight_mean": weight.detach().mean().item(),
+            "safety_q/weight_max": weight.detach().max().item(),
+            "safety_q/cost_mask_frac": cost_mask.detach().mean().item(),
+            "safety_q/boundary_mask_frac": boundary_mask.detach().mean().item(),
+            "safety_q/td_abs_mean": td_abs.detach().mean().item(),
+            "safety_q/loss_weighted": qc_loss.detach().item(),
+            "safety_q/loss_unweighted": qc_loss_unweighted.detach().item(),
         }
+
+    def safety_q_geometry_diagnostics(self, state_batch, action_batch, velocity_state_batch=None):
+        if (not self.safe_env) or self.safety_critic is None:
+            return {}
+        batch_size = int(state_batch.shape[0])
+        if batch_size == 0:
+            return {}
+
+        low = torch.as_tensor(self.action_space.low, dtype=action_batch.dtype, device=self.device).view(1, -1)
+        high = torch.as_tensor(self.action_space.high, dtype=action_batch.dtype, device=self.device).view(1, -1)
+        fd_eps = max(self.safety_q_fd_eps, 1e-8)
+        eps = max(self.jvp_eps, 1e-8)
+
+        flags = self.set_requires_grad(self.safety_critic, False)
+        try:
+            with torch.enable_grad():
+                action_for_grad = action_batch.detach().requires_grad_(True)
+                qc1, qc2 = self.safety_critic(state_batch.detach(), action_for_grad)
+                q_max = torch.max(qc1, qc2)
+                q_mean = 0.5 * (qc1 + qc2)
+                q_geom = q_max
+                grad_q = torch.autograd.grad(
+                    outputs=q_geom.sum(),
+                    inputs=action_for_grad,
+                    create_graph=False,
+                    retain_graph=False,
+                    only_inputs=True,
+                )[0]
+
+            grad_norm = grad_q.detach().norm(dim=-1, keepdim=True)
+            normal = grad_q.detach() / (grad_norm + eps)
+            action_plus = torch.max(torch.min(action_batch.detach() + fd_eps * normal, high), low)
+            action_minus = torch.max(torch.min(action_batch.detach() - fd_eps * normal, high), low)
+            with torch.no_grad():
+                q1_plus, q2_plus = self.safety_critic(state_batch.detach(), action_plus)
+                q1_minus, q2_minus = self.safety_critic(state_batch.detach(), action_minus)
+                q_plus = torch.max(q1_plus, q2_plus)
+                q_minus = torch.max(q1_minus, q2_minus)
+
+            q_detached = q_geom.detach()
+            q_plus_delta = q_plus.detach() - q_detached
+            q_minus_delta = q_minus.detach() - q_detached
+            fd_slope = (q_plus.detach() - q_minus.detach()) / (2.0 * fd_eps)
+            finite_grad = torch.isfinite(grad_q.detach()).all(dim=-1, keepdim=True).float()
+            zero_grad = (grad_norm <= eps).float()
+            boundary = (torch.abs(q_detached - self.safe_threshold) < self.safety_q_boundary_width).float()
+
+            jvp_mean = torch.tensor(0.0, device=self.device)
+            normalized_jvp_mean = torch.tensor(0.0, device=self.device)
+            if velocity_state_batch is not None:
+                with torch.no_grad():
+                    action_pi, _, _, velocity_action = self.policy.sample(velocity_state_batch.detach(), return_velocity=True)
+                with torch.enable_grad():
+                    action_pi_grad = action_pi.detach().requires_grad_(True)
+                    qc_policy = self._qc_geom_scalar(velocity_state_batch.detach(), action_pi_grad)
+                    grad_policy = torch.autograd.grad(
+                        outputs=qc_policy.sum(),
+                        inputs=action_pi_grad,
+                        create_graph=False,
+                        retain_graph=False,
+                        only_inputs=True,
+                    )[0].detach()
+                jvp = (grad_policy * velocity_action.detach()).sum(dim=-1, keepdim=True)
+                grad_policy_norm = grad_policy.norm(dim=-1, keepdim=True)
+                jvp_mean = jvp.abs().mean()
+                normalized_jvp_mean = (jvp.pow(2) / (grad_policy_norm.pow(2) + eps)).mean()
+
+            return {
+                "safety_q/q_mean": q_mean.detach().mean().item(),
+                "safety_q/q_std": q_mean.detach().std(unbiased=False).item(),
+                "safety_q/q_max_mean": q_max.detach().mean().item(),
+                "safety_q/q_max_std": q_max.detach().std(unbiased=False).item(),
+                "safety_q/grad_norm_mean": grad_norm.mean().item(),
+                "safety_q/grad_norm_std": grad_norm.std(unbiased=False).item(),
+                "safety_q/zero_grad_frac": zero_grad.mean().item(),
+                "safety_q/grad_nan_inf_frac": (1.0 - finite_grad).mean().item(),
+                "safety_q/q_plus_minus_q_mean": q_plus_delta.mean().item(),
+                "safety_q/q_minus_minus_q_mean": q_minus_delta.mean().item(),
+                "safety_q/fd_slope_mean": fd_slope.mean().item(),
+                "safety_q/mono_plus_frac": (q_plus.detach() > q_detached).float().mean().item(),
+                "safety_q/mono_minus_frac": (q_minus.detach() < q_detached).float().mean().item(),
+                "safety_q/boundary_frac": boundary.mean().item(),
+                "safety_q/jvp_mean": jvp_mean.detach().item(),
+                "safety_q/normalized_jvp_mean": normalized_jvp_mean.detach().item(),
+            }
+        finally:
+            self.restore_requires_grad(self.safety_critic, flags)
 
     def _qc_risk_scalar(self, state_batch, action_batch):
         qc1, qc2 = self.safety_critic(state_batch, action_batch)
@@ -823,6 +963,23 @@ class flowAC(object):
             log_info.update(
                 self.update_safety_critic(state_batch, action_batch, cost_batch, next_state_batch, mask_batch)
             )
+            extra_losses = []
+            if self.high_fidelity_safety_q and self.safety_q_extra_updates > 0:
+                for _ in range(self.safety_q_extra_updates):
+                    extra_state, extra_action, _, extra_cost, extra_next_state, extra_mask = memory.sample(batch_size=batch_size)
+                    extra_state = self._normalize_obs(torch.FloatTensor(extra_state).to(self.device))
+                    extra_next_state = self._normalize_obs(torch.FloatTensor(extra_next_state).to(self.device))
+                    extra_action = torch.FloatTensor(extra_action).to(self.device)
+                    extra_cost = self.ensure_column(torch.FloatTensor(extra_cost).to(self.device))
+                    extra_mask = self.ensure_column(torch.FloatTensor(extra_mask).to(self.device))
+                    extra_info = self.update_safety_critic(
+                        extra_state, extra_action, extra_cost, extra_next_state, extra_mask
+                    )
+                    extra_losses.append(float(extra_info["loss/safety_critic"]))
+            log_info["safety_q/extra_updates"] = float(self.safety_q_extra_updates if self.high_fidelity_safety_q else 0)
+            log_info["safety_q/extra_loss_mean"] = float(np.mean(extra_losses)) if extra_losses else 0.0
+            if self.high_fidelity_safety_q and self.diagnose_safety_q_geometry:
+                log_info.update(self.safety_q_geometry_diagnostics(state_batch, action_batch, state_batch))
 
         # Update policy and alpha (with delayed update)
         if updates % self.target_update_interval == 0:
