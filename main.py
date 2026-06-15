@@ -144,15 +144,28 @@ def maybe_print_safety_q_diagnostics(config, log_info, total_numsteps, update_in
         "safety_q/weight_mean",
         "safety_q/boundary_mask_frac",
         "safety_q/cost_mask_frac",
+        "safety_q/diag_qc_geom_mode_id",
         "safety_q/grad_norm_mean",
         "safety_q/zero_grad_frac",
         "safety_q/mono_plus_frac",
         "safety_q/mono_minus_frac",
         "safety_q/fd_slope_mean",
+        "safety_q/geom_grad_norm_mean",
+        "safety_q/geom_zero_grad_frac",
+        "safety_q/geom_mono_plus_frac",
+        "safety_q/geom_mono_minus_frac",
+        "safety_q/geom_fd_slope_mean",
+        "safety_q/max_grad_norm_mean",
+        "safety_q/max_zero_grad_frac",
+        "safety_q/max_mono_plus_frac",
+        "safety_q/max_mono_minus_frac",
+        "safety_q/max_fd_slope_mean",
         "safety_q/jvp_mean",
         "safety_q/normalized_jvp_mean",
         "safety_q/extra_updates",
         "safety_q/extra_loss_mean",
+        "safety/lambda_jvp_schedule_enabled",
+        "safety/lambda_jvp_eff",
     ]
     fields = []
     for key in keys:
@@ -328,6 +341,11 @@ if __name__ == "__main__":
     arg.add_arg("safe_bandwidth", 0.05, "JVP-SCD Gaussian bandwidth")
     arg.add_arg("lambda_safe", 1.0, "Safety penalty weight")
     arg.add_arg("lambda_jvp", 0.05, "JVP-SCD regularization weight")
+    arg.add_arg("lambda_jvp_schedule", False, "Enable scheduled JVP-SCD regularization weight")
+    arg.add_arg("lambda_jvp_start", 0.0, "Initial scheduled JVP-SCD regularization weight")
+    arg.add_arg("lambda_jvp_end", 0.003, "Final scheduled JVP-SCD regularization weight")
+    arg.add_arg("lambda_jvp_warmup_steps", 30000, "Environment steps before ramping scheduled JVP weight")
+    arg.add_arg("lambda_jvp_ramp_steps", 70000, "Environment steps over which to ramp scheduled JVP weight")
     arg.add_arg("jvp_warmup_steps", 20000, "Environment steps before enabling JVP-SCD")
     arg.add_arg("jvp_mode", "grad", "JVP-SCD mode: grad, forward, or hutchinson")
     arg.add_arg("normalize_jvp", False, "Normalize the JVP-SCD term")

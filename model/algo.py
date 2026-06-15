@@ -56,6 +56,11 @@ class flowAC(object):
         self.safe_bandwidth = float(getattr(args, "safe_bandwidth", 0.05))
         self.lambda_safe = float(getattr(args, "lambda_safe", 1.0))
         self.lambda_jvp = float(getattr(args, "lambda_jvp", 0.05))
+        self.lambda_jvp_schedule = bool(getattr(args, "lambda_jvp_schedule", False))
+        self.lambda_jvp_start = float(getattr(args, "lambda_jvp_start", 0.0))
+        self.lambda_jvp_end = float(getattr(args, "lambda_jvp_end", 0.003))
+        self.lambda_jvp_warmup_steps = int(getattr(args, "lambda_jvp_warmup_steps", 30000))
+        self.lambda_jvp_ramp_steps = int(getattr(args, "lambda_jvp_ramp_steps", 70000))
         self.jvp_warmup_steps = int(getattr(args, "jvp_warmup_steps", 20000))
         self.safe_policy_loss = bool(getattr(args, "safe_policy_loss", True))
 
@@ -193,6 +198,16 @@ class flowAC(object):
     def _compute_g_mid_from_qc(self, qc):
         bandwidth = self._safe_bandwidth()
         return torch.exp(-((qc - self.safe_threshold) ** 2) / (2.0 * bandwidth ** 2))
+
+    def _lambda_jvp_eff(self, total_numsteps):
+        if not self.lambda_jvp_schedule:
+            return self.lambda_jvp
+        if total_numsteps < self.lambda_jvp_warmup_steps:
+            return self.lambda_jvp_start
+        ramp_steps = max(1.0, float(self.lambda_jvp_ramp_steps))
+        progress = (float(total_numsteps) - float(self.lambda_jvp_warmup_steps)) / ramp_steps
+        progress = min(1.0, max(0.0, progress))
+        return self.lambda_jvp_start + progress * (self.lambda_jvp_end - self.lambda_jvp_start)
 
     def _mask_beta(self):
         if self.sample_count < self.masking_warmup_steps:
@@ -604,37 +619,69 @@ class flowAC(object):
 
         flags = self.set_requires_grad(self.safety_critic, False)
         try:
+            def scalar_from_outputs(q1, q2, mode):
+                if mode == "mean":
+                    return 0.5 * (q1 + q2)
+                return torch.max(q1, q2)
+
+            def fd_stats(q_ref, grad, mode):
+                grad_norm_local = grad.detach().norm(dim=-1, keepdim=True)
+                normal = grad.detach() / (grad_norm_local + eps)
+                action_plus = torch.max(torch.min(action_batch.detach() + fd_eps * normal, high), low)
+                action_minus = torch.max(torch.min(action_batch.detach() - fd_eps * normal, high), low)
+                with torch.no_grad():
+                    q1_plus, q2_plus = self.safety_critic(state_batch.detach(), action_plus)
+                    q1_minus, q2_minus = self.safety_critic(state_batch.detach(), action_minus)
+                    q_plus = scalar_from_outputs(q1_plus, q2_plus, mode)
+                    q_minus = scalar_from_outputs(q1_minus, q2_minus, mode)
+                q_detached_local = q_ref.detach()
+                q_plus_delta_local = q_plus.detach() - q_detached_local
+                q_minus_delta_local = q_minus.detach() - q_detached_local
+                fd_slope_local = (q_plus.detach() - q_minus.detach()) / (2.0 * fd_eps)
+                finite_grad_local = torch.isfinite(grad.detach()).all(dim=-1, keepdim=True).float()
+                zero_grad_local = (grad_norm_local <= eps).float()
+                boundary_local = (
+                    torch.abs(q_detached_local - self.safe_threshold) < self.safety_q_boundary_width
+                ).float()
+                return {
+                    "grad_norm_mean": grad_norm_local.mean(),
+                    "grad_norm_std": grad_norm_local.std(unbiased=False),
+                    "zero_grad_frac": zero_grad_local.mean(),
+                    "grad_nan_inf_frac": (1.0 - finite_grad_local).mean(),
+                    "q_plus_minus_q_mean": q_plus_delta_local.mean(),
+                    "q_minus_minus_q_mean": q_minus_delta_local.mean(),
+                    "fd_slope_mean": fd_slope_local.mean(),
+                    "mono_plus_frac": (q_plus.detach() > q_detached_local).float().mean(),
+                    "mono_minus_frac": (q_minus.detach() < q_detached_local).float().mean(),
+                    "boundary_frac": boundary_local.mean(),
+                }
+
             with torch.enable_grad():
                 action_for_grad = action_batch.detach().requires_grad_(True)
                 qc1, qc2 = self.safety_critic(state_batch.detach(), action_for_grad)
                 q_max = torch.max(qc1, qc2)
                 q_mean = 0.5 * (qc1 + qc2)
-                q_geom = q_max
-                grad_q = torch.autograd.grad(
+                q_geom = self._qc_geom_scalar(state_batch.detach(), action_for_grad)
+                grad_geom = torch.autograd.grad(
                     outputs=q_geom.sum(),
                     inputs=action_for_grad,
                     create_graph=False,
-                    retain_graph=False,
+                    retain_graph=True,
                     only_inputs=True,
                 )[0]
+                if self.qc_geom_mode == "max":
+                    grad_max = grad_geom
+                else:
+                    grad_max = torch.autograd.grad(
+                        outputs=q_max.sum(),
+                        inputs=action_for_grad,
+                        create_graph=False,
+                        retain_graph=False,
+                        only_inputs=True,
+                    )[0]
 
-            grad_norm = grad_q.detach().norm(dim=-1, keepdim=True)
-            normal = grad_q.detach() / (grad_norm + eps)
-            action_plus = torch.max(torch.min(action_batch.detach() + fd_eps * normal, high), low)
-            action_minus = torch.max(torch.min(action_batch.detach() - fd_eps * normal, high), low)
-            with torch.no_grad():
-                q1_plus, q2_plus = self.safety_critic(state_batch.detach(), action_plus)
-                q1_minus, q2_minus = self.safety_critic(state_batch.detach(), action_minus)
-                q_plus = torch.max(q1_plus, q2_plus)
-                q_minus = torch.max(q1_minus, q2_minus)
-
-            q_detached = q_geom.detach()
-            q_plus_delta = q_plus.detach() - q_detached
-            q_minus_delta = q_minus.detach() - q_detached
-            fd_slope = (q_plus.detach() - q_minus.detach()) / (2.0 * fd_eps)
-            finite_grad = torch.isfinite(grad_q.detach()).all(dim=-1, keepdim=True).float()
-            zero_grad = (grad_norm <= eps).float()
-            boundary = (torch.abs(q_detached - self.safe_threshold) < self.safety_q_boundary_width).float()
+            geom_stats = fd_stats(q_geom, grad_geom, self.qc_geom_mode)
+            max_stats = fd_stats(q_max, grad_max, "max")
 
             jvp_mean = torch.tensor(0.0, device=self.device)
             normalized_jvp_mean = torch.tensor(0.0, device=self.device)
@@ -661,16 +708,31 @@ class flowAC(object):
                 "safety_q/q_std": q_mean.detach().std(unbiased=False).item(),
                 "safety_q/q_max_mean": q_max.detach().mean().item(),
                 "safety_q/q_max_std": q_max.detach().std(unbiased=False).item(),
-                "safety_q/grad_norm_mean": grad_norm.mean().item(),
-                "safety_q/grad_norm_std": grad_norm.std(unbiased=False).item(),
-                "safety_q/zero_grad_frac": zero_grad.mean().item(),
-                "safety_q/grad_nan_inf_frac": (1.0 - finite_grad).mean().item(),
-                "safety_q/q_plus_minus_q_mean": q_plus_delta.mean().item(),
-                "safety_q/q_minus_minus_q_mean": q_minus_delta.mean().item(),
-                "safety_q/fd_slope_mean": fd_slope.mean().item(),
-                "safety_q/mono_plus_frac": (q_plus.detach() > q_detached).float().mean().item(),
-                "safety_q/mono_minus_frac": (q_minus.detach() < q_detached).float().mean().item(),
-                "safety_q/boundary_frac": boundary.mean().item(),
+                "safety_q/diag_qc_geom_mode_id": 1.0 if self.qc_geom_mode == "mean" else 0.0,
+                "safety_q/grad_norm_mean": geom_stats["grad_norm_mean"].item(),
+                "safety_q/grad_norm_std": geom_stats["grad_norm_std"].item(),
+                "safety_q/zero_grad_frac": geom_stats["zero_grad_frac"].item(),
+                "safety_q/grad_nan_inf_frac": geom_stats["grad_nan_inf_frac"].item(),
+                "safety_q/q_plus_minus_q_mean": geom_stats["q_plus_minus_q_mean"].item(),
+                "safety_q/q_minus_minus_q_mean": geom_stats["q_minus_minus_q_mean"].item(),
+                "safety_q/fd_slope_mean": geom_stats["fd_slope_mean"].item(),
+                "safety_q/mono_plus_frac": geom_stats["mono_plus_frac"].item(),
+                "safety_q/mono_minus_frac": geom_stats["mono_minus_frac"].item(),
+                "safety_q/boundary_frac": geom_stats["boundary_frac"].item(),
+                "safety_q/geom_grad_norm_mean": geom_stats["grad_norm_mean"].item(),
+                "safety_q/geom_grad_norm_std": geom_stats["grad_norm_std"].item(),
+                "safety_q/geom_zero_grad_frac": geom_stats["zero_grad_frac"].item(),
+                "safety_q/geom_q_plus_minus_q_mean": geom_stats["q_plus_minus_q_mean"].item(),
+                "safety_q/geom_q_minus_minus_q_mean": geom_stats["q_minus_minus_q_mean"].item(),
+                "safety_q/geom_fd_slope_mean": geom_stats["fd_slope_mean"].item(),
+                "safety_q/geom_mono_plus_frac": geom_stats["mono_plus_frac"].item(),
+                "safety_q/geom_mono_minus_frac": geom_stats["mono_minus_frac"].item(),
+                "safety_q/geom_boundary_frac": geom_stats["boundary_frac"].item(),
+                "safety_q/max_grad_norm_mean": max_stats["grad_norm_mean"].item(),
+                "safety_q/max_zero_grad_frac": max_stats["zero_grad_frac"].item(),
+                "safety_q/max_mono_plus_frac": max_stats["mono_plus_frac"].item(),
+                "safety_q/max_mono_minus_frac": max_stats["mono_minus_frac"].item(),
+                "safety_q/max_fd_slope_mean": max_stats["fd_slope_mean"].item(),
                 "safety_q/jvp_mean": jvp_mean.detach().item(),
                 "safety_q/normalized_jvp_mean": normalized_jvp_mean.detach().item(),
             }
@@ -841,6 +903,8 @@ class flowAC(object):
             reward_weight = torch.ones_like(min_qf_pi)
             safe_weight = torch.ones_like(min_qf_pi)
             jvp_enabled = self.safe_env and self.safe_policy_loss and current_step_or_updates >= self.jvp_warmup_steps
+            lambda_jvp_eff_value = self._lambda_jvp_eff(current_step_or_updates)
+            lambda_jvp_eff = torch.tensor(lambda_jvp_eff_value, device=self.device)
 
             if self.safe_env and self.safe_policy_loss:
                 safety_flags = self.set_requires_grad(self.safety_critic, False)
@@ -889,7 +953,7 @@ class flowAC(object):
 
             policy_loss = policy_loss_terms.mean()
             if jvp_enabled:
-                policy_loss = policy_loss + self.lambda_jvp * jvp_loss
+                policy_loss = policy_loss + lambda_jvp_eff * jvp_loss
 
         # Update policy
         self.policy_optim.zero_grad()
@@ -907,7 +971,7 @@ class flowAC(object):
             self.scaler.scale(alpha_loss).backward()
             self.scaler.step(self.alpha_optim)
             self.scaler.update()
-        jvp_weighted = self.lambda_jvp * jvp_loss if jvp_enabled else torch.tensor(0.0, device=self.device)
+        jvp_weighted = lambda_jvp_eff * jvp_loss if jvp_enabled else torch.tensor(0.0, device=self.device)
         jvp_scd_value = float(jvp_loss.detach().item())
         jvp_weighted_value = float(jvp_weighted.detach().item())
         return {
@@ -927,6 +991,10 @@ class flowAC(object):
             "safety/reward_weight_mean": float(reward_weight_mean.detach().item()),
             "safety/safe_weight_mean": float(safe_weight_mean.detach().item()),
             "safety/feas_gate_risky_frac": float(feas_gate_risky_frac.detach().item()),
+            "safety/lambda_jvp_schedule_enabled": 1.0 if self.lambda_jvp_schedule else 0.0,
+            "safety/lambda_jvp_eff": float(lambda_jvp_eff.detach().item()),
+            "safety/lambda_jvp_start": float(self.lambda_jvp_start),
+            "safety/lambda_jvp_end": float(self.lambda_jvp_end),
             "loss/jvp_scd": jvp_scd_value,
             "loss/jvp_scd_x1e6": jvp_scd_value * 1e6,
             "loss/jvp_weighted": jvp_weighted_value,

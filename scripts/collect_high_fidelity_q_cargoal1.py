@@ -66,11 +66,22 @@ METRICS = [
     "safety_q/weight_mean",
     "safety_q/boundary_mask_frac",
     "safety_q/cost_mask_frac",
+    "safety_q/diag_qc_geom_mode_id",
     "safety_q/grad_norm_mean",
     "safety_q/zero_grad_frac",
     "safety_q/mono_plus_frac",
     "safety_q/mono_minus_frac",
     "safety_q/fd_slope_mean",
+    "safety_q/geom_grad_norm_mean",
+    "safety_q/geom_zero_grad_frac",
+    "safety_q/geom_mono_plus_frac",
+    "safety_q/geom_mono_minus_frac",
+    "safety_q/geom_fd_slope_mean",
+    "safety_q/max_grad_norm_mean",
+    "safety_q/max_zero_grad_frac",
+    "safety_q/max_mono_plus_frac",
+    "safety_q/max_mono_minus_frac",
+    "safety_q/max_fd_slope_mean",
     "safety_q/jvp_mean",
     "safety_q/normalized_jvp_mean",
     "loss/jvp_weighted",
@@ -158,11 +169,16 @@ def metric_mean(rows: list[dict[str, object]], key: str) -> float | None:
     return mean_std([row.get(key) for row in rows])[0]  # type: ignore[list-item]
 
 
+def metric_mean_fallback(rows: list[dict[str, object]], primary: str, fallback: str) -> float | None:
+    primary_value = metric_mean(rows, primary)
+    return primary_value if primary_value is not None else metric_mean(rows, fallback)
+
+
 def geometry_improved(stat: dict[str, object]) -> bool:
-    mono_plus = stat.get("mono_plus_frac")
-    mono_minus = stat.get("mono_minus_frac")
-    fd_slope = stat.get("fd_slope_mean")
-    zero_grad = stat.get("zero_grad_frac")
+    mono_plus = stat.get("geom_mono_plus_frac")
+    mono_minus = stat.get("geom_mono_minus_frac")
+    fd_slope = stat.get("geom_fd_slope_mean")
+    zero_grad = stat.get("geom_zero_grad_frac")
     if None in (mono_plus, mono_minus, fd_slope, zero_grad):
         return False
     return (
@@ -180,7 +196,7 @@ def decide(avg_reward: float | None, avg_cost: float | None, complete: int, expe
         return "pending"
     if avg_reward is None or avg_cost is None:
         return "no_data"
-    zero_grad = stat.get("zero_grad_frac")
+    zero_grad = stat.get("geom_zero_grad_frac")
     if avg_reward < 12.0 or avg_cost > 90.0 or (zero_grad is not None and float(zero_grad) > 0.50):
         return "bad"
     if avg_reward >= 20.0 and avg_cost <= PPO_COST:
@@ -214,11 +230,17 @@ def group_stats(rows: list[dict[str, object]], group: str) -> dict[str, object]:
         "safety_q_weight_mean": metric_mean(complete, "safety_q/weight_mean"),
         "safety_q_boundary_frac": metric_mean(complete, "safety_q/boundary_mask_frac"),
         "safety_q_cost_frac": metric_mean(complete, "safety_q/cost_mask_frac"),
-        "grad_norm_mean": metric_mean(complete, "safety_q/grad_norm_mean"),
-        "zero_grad_frac": metric_mean(complete, "safety_q/zero_grad_frac"),
-        "mono_plus_frac": metric_mean(complete, "safety_q/mono_plus_frac"),
-        "mono_minus_frac": metric_mean(complete, "safety_q/mono_minus_frac"),
-        "fd_slope_mean": metric_mean(complete, "safety_q/fd_slope_mean"),
+        "diag_qc_geom_mode_id": metric_mean(complete, "safety_q/diag_qc_geom_mode_id"),
+        "geom_grad_norm_mean": metric_mean_fallback(complete, "safety_q/geom_grad_norm_mean", "safety_q/grad_norm_mean"),
+        "geom_zero_grad_frac": metric_mean_fallback(complete, "safety_q/geom_zero_grad_frac", "safety_q/zero_grad_frac"),
+        "geom_mono_plus_frac": metric_mean_fallback(complete, "safety_q/geom_mono_plus_frac", "safety_q/mono_plus_frac"),
+        "geom_mono_minus_frac": metric_mean_fallback(complete, "safety_q/geom_mono_minus_frac", "safety_q/mono_minus_frac"),
+        "geom_fd_slope_mean": metric_mean_fallback(complete, "safety_q/geom_fd_slope_mean", "safety_q/fd_slope_mean"),
+        "max_grad_norm_mean": metric_mean_fallback(complete, "safety_q/max_grad_norm_mean", "safety_q/grad_norm_mean"),
+        "max_zero_grad_frac": metric_mean_fallback(complete, "safety_q/max_zero_grad_frac", "safety_q/zero_grad_frac"),
+        "max_mono_plus_frac": metric_mean_fallback(complete, "safety_q/max_mono_plus_frac", "safety_q/mono_plus_frac"),
+        "max_mono_minus_frac": metric_mean_fallback(complete, "safety_q/max_mono_minus_frac", "safety_q/mono_minus_frac"),
+        "max_fd_slope_mean": metric_mean_fallback(complete, "safety_q/max_fd_slope_mean", "safety_q/fd_slope_mean"),
         "jvp_mean": metric_mean(complete, "safety_q/jvp_mean"),
         "normalized_jvp_mean": metric_mean(complete, "safety_q/normalized_jvp_mean"),
         "weighted_jvp": metric_mean(complete, "loss/jvp_weighted"),
@@ -318,8 +340,8 @@ def main() -> None:
         f"C4 long: Reward = {C4_REWARD}, Cost = {C4_COST}.",
         f"PPO baseline: Reward = {PPO_REWARD}, Cost = {PPO_COST}.",
         "",
-        "| Group | Seeds | Reward | Cost | lambda_safe | lambda_jvp | safety_q_extra_updates | safety_q_weight_mean | safety_q_boundary_frac | safety_q_cost_frac | grad_norm_mean | zero_grad_frac | mono_plus_frac | mono_minus_frac | fd_slope_mean | jvp_mean | Decision |",
-        "| ----- | ----: | -----: | ---: | ----------: | ---------: | ---------------------: | -------------------: | ---------------------: | -----------------: | -------------: | -------------: | -------------: | --------------: | ------------: | -------: | -------- |",
+        "| Group | Seeds | Reward | Cost | lambda_safe | lambda_jvp | safety_q_extra_updates | safety_q_weight_mean | safety_q_boundary_frac | safety_q_cost_frac | geom_grad_norm_mean | geom_zero_grad_frac | geom_mono_plus_frac | geom_mono_minus_frac | geom_fd_slope_mean | max_mono_plus_frac | max_mono_minus_frac | jvp_mean | Decision |",
+        "| ----- | ----: | -----: | ---: | ----------: | ---------: | ---------------------: | -------------------: | ---------------------: | -----------------: | ------------------: | ------------------: | ------------------: | -------------------: | -----------------: | -----------------: | ------------------: | -------: | -------- |",
     ]
     for group, cfg in GROUPS.items():
         stat = stats[group]
@@ -328,8 +350,9 @@ def main() -> None:
             f"{fmt_mean_std(stat['avg_last3_reward'])} | {fmt_mean_std(stat['avg_last3_cost'])} | "
             f"{cfg['lambda_safe']} | {cfg['lambda_jvp']} | {cfg['safety_q_extra_updates']} | "
             f"{fmt(stat['safety_q_weight_mean'])} | {fmt(stat['safety_q_boundary_frac'])} | {fmt(stat['safety_q_cost_frac'])} | "
-            f"{sci(stat['grad_norm_mean'])} | {fmt(stat['zero_grad_frac'])} | {fmt(stat['mono_plus_frac'])} | "
-            f"{fmt(stat['mono_minus_frac'])} | {sci(stat['fd_slope_mean'])} | {sci(stat['jvp_mean'])} | {stat['decision']} |"
+            f"{sci(stat['geom_grad_norm_mean'])} | {fmt(stat['geom_zero_grad_frac'])} | {fmt(stat['geom_mono_plus_frac'])} | "
+            f"{fmt(stat['geom_mono_minus_frac'])} | {sci(stat['geom_fd_slope_mean'])} | "
+            f"{fmt(stat['max_mono_plus_frac'])} | {fmt(stat['max_mono_minus_frac'])} | {sci(stat['jvp_mean'])} | {stat['decision']} |"
         )
 
     lines += [
