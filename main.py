@@ -135,10 +135,24 @@ def evaluation(agent, env, total_numsteps, writer, best_reward, video_path=None)
     
     return avg_reward
 
+def get_eval_interval_steps(config):
+    eval_interval_steps = int(getattr(config, "eval_interval_steps", 0))
+    if eval_interval_steps <= 0:
+        eval_interval_steps = int(getattr(config, "eval_numsteps", 10000))
+    return max(1, eval_interval_steps)
+
+
+def get_diagnose_interval_steps(config):
+    return int(getattr(config, "diagnose_interval_steps", 1000))
+
+
 def maybe_print_safety_q_diagnostics(config, log_info, total_numsteps, update_index=0):
     if not getattr(config, "diagnose_safety_q_geometry", False):
         return
-    if update_index != 0 or total_numsteps % 1000 != 0:
+    diagnose_interval_steps = get_diagnose_interval_steps(config)
+    if update_index != 0:
+        return
+    if diagnose_interval_steps > 0 and total_numsteps % diagnose_interval_steps != 0:
         return
     keys = [
         "safety_q/weight_mean",
@@ -164,8 +178,20 @@ def maybe_print_safety_q_diagnostics(config, log_info, total_numsteps, update_in
         "safety_q/normalized_jvp_mean",
         "safety_q/extra_updates",
         "safety_q/extra_loss_mean",
+        "safety/lambda_safe_schedule_enabled",
+        "safety/lambda_safe_eff",
         "safety/lambda_jvp_schedule_enabled",
         "safety/lambda_jvp_eff",
+        "safety/jvp_active",
+        "safety/jvp_batch_size_eff",
+        "safety/jvp_selected_frac",
+        "safety/jvp_update_interval",
+        "safety/jvp_one_sided",
+        "safety/normal_vel_mean",
+        "safety/normal_vel_pos_frac",
+        "safety/normal_vel_pos_energy",
+        "safety/normal_vel_neg_energy",
+        "safety/gate_active_frac",
     ]
     fields = []
     for key in keys:
@@ -214,8 +240,19 @@ def train_loop(config, msg = "default"):
     else:
         memory = ReplayMemory(config.replay_size, config.seed)
 
+    eval_interval_steps = get_eval_interval_steps(config)
+    diagnose_interval_steps = get_diagnose_interval_steps(config)
+    save_interval_steps = int(getattr(config, "save_interval_steps", 0))
+    print(
+        "EVAL_CONFIG eval_interval_steps={} eval_numsteps={} eval_times={} diagnose_interval_steps={} save_interval_steps={}".format(
+            eval_interval_steps, config.eval_numsteps, config.eval_times, diagnose_interval_steps, save_interval_steps
+        ),
+        flush=True,
+    )
+
     # Training Loop
     total_numsteps = 0
+    train_total_cost = 0.0
     updates = 0
     best_reward = -1e6
     for i_episode in itertools.count(1):
@@ -252,6 +289,7 @@ def train_loop(config, msg = "default"):
             total_numsteps += 1
             episode_reward += reward
             episode_cost += cost
+            train_total_cost += float(cost)
 
             # Bootstrap through time-limit truncation, but stop at real terminal states.
             mask = 0.0 if terminated else 1.0
@@ -263,30 +301,50 @@ def train_loop(config, msg = "default"):
             state = next_state
 
             # test agent
-            if total_numsteps % config.eval_numsteps == 0 and config.eval is True:
+            if total_numsteps % eval_interval_steps == 0 and config.eval is True:
                 video_path = None
                 avg_reward = evaluation(agent, eval_env, total_numsteps, writer, best_reward, video_path)
                 if avg_reward >= best_reward and config.save is True:
                     best_reward = avg_reward
                     agent.save_checkpoint(checkpoint_path, 'best')
 
+            if config.save is True and save_interval_steps > 0 and total_numsteps % save_interval_steps == 0:
+                agent.save_checkpoint(checkpoint_path, f'step_{total_numsteps}')
+
             if total_numsteps >= config.num_steps:
                 break
 
-        if total_numsteps >= config.num_steps:
-            break
-
         log_alpha_value = float(agent.log_alpha.detach().cpu().item())
+        train_cost_rate = train_total_cost / max(1, total_numsteps)
         wandb.log(
             {
                 'train/reward': episode_reward,
                 'train/cost': episode_cost,
                 'train/cost_rate': episode_cost / max(1, episode_steps),
+                'train/total_cost': train_total_cost,
+                'train/total_env_steps': total_numsteps,
+                'train/total_cost_rate': train_cost_rate,
                 'train/log_alpha': log_alpha_value,
                 'train/alpha': float(np.exp(log_alpha_value)),
             },
             step=total_numsteps,
         )
+        train_cost_message = (
+            "TRAIN_COST episode={} step={} episode_cost={:.6g} "
+            "episode_cost_rate={:.8g} train_total_cost={:.8g} "
+            "train_total_env_steps={} train_cost_rate={:.8g}\n"
+        ).format(
+            i_episode,
+            total_numsteps,
+            float(episode_cost),
+            float(episode_cost) / max(1, episode_steps),
+            float(train_total_cost),
+            total_numsteps,
+            float(train_cost_rate),
+        )
+        with open(log_filename, 'a') as log_file:
+            log_file.write(train_cost_message)
+        print(train_cost_message, end='', flush=True)
         if i_episode % 10 == 0:
             log_message = "Episode: {}, total numsteps: {}, episode steps: {}, reward: {}\n".format(
                     i_episode, total_numsteps, episode_steps, round(episode_reward, 2)
@@ -294,6 +352,8 @@ def train_loop(config, msg = "default"):
             with open(log_filename, 'a') as log_file:
                 log_file.write(log_message)
             print(log_message, end='', flush=True)
+        if total_numsteps >= config.num_steps:
+            break
 
     env.close()
     eval_env.close()
@@ -315,9 +375,11 @@ if __name__ == "__main__":
     arg.add_arg("updates_per_step", 1, "Gradient updates per environment step")
     arg.add_arg("hidden_size", 512, "Hidden layer size for policy and critics")
     arg.add_arg("eval", True, "Enable evaluation")
-    arg.add_arg("eval_numsteps", 10000, "Evaluation interval")
+    arg.add_arg("eval_numsteps", 10000, "Evaluation interval; kept for backward compatibility")
+    arg.add_arg("eval_interval_steps", 0, "Training evaluation interval; <=0 falls back to eval_numsteps")
     arg.add_arg("eval_times", 5, "Evaluation episodes")
     arg.add_arg("save", True, "Save best checkpoint")
+    arg.add_arg("save_interval_steps", 0, "Periodic checkpoint interval; 0 disables periodic checkpoints")
     arg.add_arg("steps", 1, "Flow policy integration steps")
     arg.add_arg("epsilon", 0.0, "random noise for exploration")
     arg.add_arg("normalize_obs", True, "Running mean/std normalization for observations")
@@ -340,6 +402,11 @@ if __name__ == "__main__":
     arg.add_arg("cdf_target_clip", True, "Clip CDF safety target to [0, 1]")
     arg.add_arg("safe_bandwidth", 0.05, "JVP-SCD Gaussian bandwidth")
     arg.add_arg("lambda_safe", 1.0, "Safety penalty weight")
+    arg.add_arg("lambda_safe_schedule", False, "Enable scheduled actor safety penalty weight")
+    arg.add_arg("lambda_safe_start", 0.5, "Initial scheduled actor safety penalty weight")
+    arg.add_arg("lambda_safe_end", 0.8, "Final scheduled actor safety penalty weight")
+    arg.add_arg("lambda_safe_warmup_steps", 30000, "Environment steps before ramping scheduled safety penalty")
+    arg.add_arg("lambda_safe_ramp_steps", 70000, "Environment steps over which to ramp scheduled safety penalty")
     arg.add_arg("lambda_jvp", 0.05, "JVP-SCD regularization weight")
     arg.add_arg("lambda_jvp_schedule", False, "Enable scheduled JVP-SCD regularization weight")
     arg.add_arg("lambda_jvp_start", 0.0, "Initial scheduled JVP-SCD regularization weight")
@@ -352,6 +419,12 @@ if __name__ == "__main__":
     arg.add_arg("jvp_norm_mode", "exact", "JVP normalization mode")
     arg.add_arg("jvp_hutchinson_samples", 1, "Number of Hutchinson samples for approximate JVP modes")
     arg.add_arg("jvp_eps", 1e-6, "Numerical epsilon for JVP normalization")
+    arg.add_arg("jvp_batch_size", 0, "Max samples for JVP geometry; 0 means full batch")
+    arg.add_arg("jvp_sample_mode", "full", "JVP sample mode: full, random, boundary, topk_gate")
+    arg.add_arg("jvp_update_interval", 1, "Compute JVP geometry every N actor updates")
+    arg.add_arg("jvp_one_sided", False, "Penalize only cost-increasing JVP normal velocity")
+    arg.add_arg("jvp_gate_mode", "boundary", "JVP gate mode: boundary, unsafe_side, boundary_or_unsafe")
+    arg.add_arg("jvp_gate_temperature", 0.01, "Temperature for unsafe-side JVP gate")
     arg.add_arg("soft_feasibility_gate", False, "Enable soft feasibility gate for actor reward/safety loss")
     arg.add_arg("feas_gate_tau", 0.05, "Soft feasibility gate temperature")
     arg.add_arg("feas_gate_detach", True, "Detach soft feasibility gate weights")
@@ -376,6 +449,7 @@ if __name__ == "__main__":
     arg.add_arg("safe_policy_loss", True, "Enable safety-aware actor loss")
     arg.add_arg("diagnose_safety_geometry", False, "Enable safety geometry diagnostics in diagnostic scripts")
     arg.add_arg("diagnose_safety_q_geometry", False, "Log safety-Q action-gradient finite-difference diagnostics")
+    arg.add_arg("diagnose_interval_steps", 1000, "Safety-Q diagnostic interval; <=0 computes diagnostics every update")
     arg.add_arg("safety_q_fd_eps", 0.01, "Finite-difference epsilon for safety-Q geometry diagnostics")
     arg.add_arg("safety_q_boundary_width", 0.05, "Safety-Q boundary band width")
     arg.add_arg("high_fidelity_safety_q", False, "Enable high-fidelity safety-Q training features")

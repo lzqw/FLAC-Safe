@@ -55,6 +55,11 @@ class flowAC(object):
         self.cdf_target_clip = bool(getattr(args, "cdf_target_clip", True))
         self.safe_bandwidth = float(getattr(args, "safe_bandwidth", 0.05))
         self.lambda_safe = float(getattr(args, "lambda_safe", 1.0))
+        self.lambda_safe_schedule = bool(getattr(args, "lambda_safe_schedule", False))
+        self.lambda_safe_start = float(getattr(args, "lambda_safe_start", self.lambda_safe))
+        self.lambda_safe_end = float(getattr(args, "lambda_safe_end", self.lambda_safe))
+        self.lambda_safe_warmup_steps = int(getattr(args, "lambda_safe_warmup_steps", 30000))
+        self.lambda_safe_ramp_steps = int(getattr(args, "lambda_safe_ramp_steps", 70000))
         self.lambda_jvp = float(getattr(args, "lambda_jvp", 0.05))
         self.lambda_jvp_schedule = bool(getattr(args, "lambda_jvp_schedule", False))
         self.lambda_jvp_start = float(getattr(args, "lambda_jvp_start", 0.0))
@@ -72,6 +77,21 @@ class flowAC(object):
         self.jvp_norm_mode = str(getattr(args, "jvp_norm_mode", "hutchinson"))
         self.jvp_hutchinson_samples = int(getattr(args, "jvp_hutchinson_samples", 1))
         self.jvp_eps = float(getattr(args, "jvp_eps", 1e-6))
+        self.jvp_batch_size = int(getattr(args, "jvp_batch_size", 0))
+        self.jvp_sample_mode = str(getattr(args, "jvp_sample_mode", "full"))
+        if self.jvp_sample_mode not in ("full", "random", "boundary", "topk_gate"):
+            raise ValueError(f"Unknown jvp_sample_mode: {self.jvp_sample_mode}")
+        self.jvp_update_interval = int(getattr(args, "jvp_update_interval", 1))
+        if self.jvp_update_interval <= 0:
+            raise ValueError("jvp_update_interval must be positive")
+        self.jvp_one_sided = bool(getattr(args, "jvp_one_sided", False))
+        self.jvp_gate_mode = str(getattr(args, "jvp_gate_mode", "boundary"))
+        if self.jvp_gate_mode not in ("boundary", "unsafe_side", "boundary_or_unsafe"):
+            raise ValueError(f"Unknown jvp_gate_mode: {self.jvp_gate_mode}")
+        self.jvp_gate_temperature = float(getattr(args, "jvp_gate_temperature", 0.01))
+        if self.jvp_gate_temperature <= 0:
+            raise ValueError("jvp_gate_temperature must be positive")
+        self.policy_update_count = 0
         self.soft_feasibility_gate = bool(getattr(args, "soft_feasibility_gate", False))
         self.feas_gate_tau = float(getattr(args, "feas_gate_tau", 0.05))
         self.feas_gate_detach = bool(getattr(args, "feas_gate_detach", True))
@@ -90,6 +110,7 @@ class flowAC(object):
         self.safety_q_extra_updates = int(getattr(args, "safety_q_extra_updates", 0))
         self.safety_q_boundary_width = float(getattr(args, "safety_q_boundary_width", 0.05))
         self.diagnose_safety_q_geometry = bool(getattr(args, "diagnose_safety_q_geometry", False))
+        self.diagnose_interval_steps = int(getattr(args, "diagnose_interval_steps", 1000))
         self.safety_q_fd_eps = float(getattr(args, "safety_q_fd_eps", 0.01))
         if self.safety_q_max_weight < 1.0:
             raise ValueError("safety_q_max_weight must be >= 1")
@@ -199,6 +220,76 @@ class flowAC(object):
         bandwidth = self._safe_bandwidth()
         return torch.exp(-((qc - self.safe_threshold) ** 2) / (2.0 * bandwidth ** 2))
 
+    def _jvp_sample_mode_id(self):
+        return {
+            "full": 0.0,
+            "random": 1.0,
+            "boundary": 2.0,
+            "topk_gate": 3.0,
+        }.get(self.jvp_sample_mode, -1.0)
+
+    def _jvp_gate_mode_id(self):
+        return {
+            "boundary": 0.0,
+            "unsafe_side": 1.0,
+            "boundary_or_unsafe": 2.0,
+        }.get(self.jvp_gate_mode, -1.0)
+
+    def _compute_jvp_gate_from_qc(self, qc_detached):
+        gate_boundary = self._compute_g_mid_from_qc(qc_detached)
+        if self.jvp_gate_mode == "boundary":
+            return gate_boundary
+
+        temperature = max(float(self.jvp_gate_temperature), 1e-6)
+        unsafe_floor = self.safe_threshold - self._safe_bandwidth()
+        gate_unsafe = torch.sigmoid((qc_detached - unsafe_floor) / temperature)
+        if self.jvp_gate_mode == "unsafe_side":
+            return gate_unsafe
+        return torch.maximum(gate_boundary, gate_unsafe)
+
+    def _random_jvp_indices(self, batch_size, k, device):
+        return torch.randperm(batch_size, device=device)[:k]
+
+    def _select_jvp_indices(self, gate):
+        batch_size = int(gate.shape[0])
+        if batch_size <= 0:
+            return None
+        if self.jvp_batch_size <= 0 or self.jvp_sample_mode == "full" or self.jvp_batch_size >= batch_size:
+            return None
+
+        k = max(1, min(int(self.jvp_batch_size), batch_size))
+        device = gate.device
+        with torch.no_grad():
+            flat_gate = gate.detach().view(batch_size, -1).mean(dim=1)
+            flat_gate = torch.where(torch.isfinite(flat_gate), flat_gate, torch.zeros_like(flat_gate))
+
+            if self.jvp_sample_mode == "random":
+                return self._random_jvp_indices(batch_size, k, device)
+
+            if self.jvp_sample_mode == "topk_gate":
+                if torch.max(flat_gate).item() <= 0.0:
+                    return self._random_jvp_indices(batch_size, k, device)
+                return torch.topk(flat_gate, k=k, largest=True, sorted=False).indices
+
+            if self.jvp_sample_mode == "boundary":
+                active = torch.nonzero(flat_gate > 1e-3, as_tuple=False).flatten()
+                if active.numel() == 0:
+                    return self._random_jvp_indices(batch_size, k, device)
+                if active.numel() >= k:
+                    active_scores = flat_gate.index_select(0, active)
+                    return active.index_select(0, torch.topk(active_scores, k=k, largest=True, sorted=False).indices)
+
+                remaining_mask = torch.ones(batch_size, dtype=torch.bool, device=device)
+                remaining_mask[active] = False
+                remaining = torch.nonzero(remaining_mask, as_tuple=False).flatten()
+                fill_count = k - int(active.numel())
+                if remaining.numel() > 0 and fill_count > 0:
+                    fill = remaining[torch.randperm(remaining.numel(), device=device)[:fill_count]]
+                    return torch.cat([active, fill], dim=0)
+                return active
+
+        return None
+
     def _lambda_jvp_eff(self, total_numsteps):
         if not self.lambda_jvp_schedule:
             return self.lambda_jvp
@@ -208,6 +299,23 @@ class flowAC(object):
         progress = (float(total_numsteps) - float(self.lambda_jvp_warmup_steps)) / ramp_steps
         progress = min(1.0, max(0.0, progress))
         return self.lambda_jvp_start + progress * (self.lambda_jvp_end - self.lambda_jvp_start)
+
+    def _lambda_safe_eff(self, total_numsteps):
+        if not self.lambda_safe_schedule:
+            return self.lambda_safe
+        if total_numsteps < self.lambda_safe_warmup_steps:
+            return self.lambda_safe_start
+        ramp_steps = max(1.0, float(self.lambda_safe_ramp_steps))
+        progress = (float(total_numsteps) - float(self.lambda_safe_warmup_steps)) / ramp_steps
+        progress = min(1.0, max(0.0, progress))
+        return self.lambda_safe_start + progress * (self.lambda_safe_end - self.lambda_safe_start)
+
+    def _should_diagnose_safety_q(self, total_numsteps):
+        if not (self.high_fidelity_safety_q and self.diagnose_safety_q_geometry):
+            return False
+        if total_numsteps is None or self.diagnose_interval_steps <= 0:
+            return True
+        return int(total_numsteps) % max(1, self.diagnose_interval_steps) == 0
 
     def _mask_beta(self):
         if self.sample_count < self.masking_warmup_steps:
@@ -799,17 +907,16 @@ class flowAC(object):
                 return grad_norm_sq
         return torch.stack(terms, dim=0).mean(dim=0).detach()
 
-    def compute_jvp_scd(self, state_batch, action_pi, velocity_action, g_mid):
+    def compute_jvp_scd(self, state_batch, action_pi, velocity_action, g_mid, one_sided=None):
         """Safety-critical directional derivative penalty.
 
         Preferred mode: true forward-mode JVP of Q_C along flow velocity.
         Fallback mode: grad-dot-vector, mathematically the same directional
         derivative but computed by reverse-mode autograd.
 
-        If normalize_jvp=True, the loss uses an estimated ||grad_u Q_C||^2
-        denominator. With jvp_norm_mode='hutchinson', that denominator is
-        estimated by random JVP probes; with 'exact' it uses the fallback exact
-        reverse-mode gradient norm.
+        If one_sided=True, only cost-increasing normal velocity is penalized.
+        The safety normal remains detached, so this avoids second-order critic
+        gradients and only pushes on the actor flow velocity.
         """
         directional_source = "forward_jvp"
         try:
@@ -823,6 +930,9 @@ class flowAC(object):
             directional, grad_norm_sq = self._grad_dot_directional(state_batch, action_pi, velocity_action)
             directional_source = "grad_dot_fallback"
 
+        use_one_sided = self.jvp_one_sided if one_sided is None else bool(one_sided)
+        penalty_directional = F.relu(directional) if use_one_sided else directional
+
         if self.normalize_jvp:
             if self.jvp_norm_mode == "hutchinson":
                 denom = self._hutchinson_grad_norm_sq(state_batch, action_pi)
@@ -830,12 +940,12 @@ class flowAC(object):
                 if grad_norm_sq is None:
                     _, grad_norm_sq = self._grad_dot_directional(state_batch, action_pi, torch.zeros_like(velocity_action))
                 denom = grad_norm_sq
-            loss_terms = directional.pow(2) / (denom.detach() + self.jvp_eps)
+            loss_terms = penalty_directional.pow(2) / (denom.detach() + self.jvp_eps)
             denom_mean = denom.detach().mean()
             jvp_loss = (g_mid.detach() * loss_terms).mean()
             grad_norm = torch.sqrt(denom.detach() + self.jvp_eps).mean()
         else:
-            jvp_loss = (g_mid.detach() * directional.pow(2)).mean()
+            jvp_loss = (g_mid.detach() * penalty_directional.pow(2)).mean()
             denom_mean = torch.tensor(0.0, device=self.device)
             if grad_norm_sq is None:
                 # Avoid an extra reverse-mode pass only for logging in forward JVP mode.
@@ -849,8 +959,25 @@ class flowAC(object):
             "grad_dot_fallback": -1.0,
         }[directional_source]
         source_tensor = torch.tensor(source_code, device=self.device)
-        directional_abs = directional.detach().abs().mean()
-        return jvp_loss, grad_norm.detach(), denom_mean.detach(), directional_abs, source_tensor
+        normal_velocity = directional.detach()
+        directional_abs = normal_velocity.abs().mean()
+        normal_vel_mean = normal_velocity.mean()
+        normal_vel_pos = F.relu(normal_velocity)
+        normal_vel_neg = F.relu(-normal_velocity)
+        normal_vel_pos_frac = (normal_velocity > 0.0).float().mean()
+        normal_vel_pos_energy = normal_vel_pos.pow(2).mean()
+        normal_vel_neg_energy = normal_vel_neg.pow(2).mean()
+        return (
+            jvp_loss,
+            grad_norm.detach(),
+            denom_mean.detach(),
+            directional_abs,
+            source_tensor,
+            normal_vel_mean,
+            normal_vel_pos_frac,
+            normal_vel_pos_energy,
+            normal_vel_neg_energy,
+        )
 
     @staticmethod
     def set_requires_grad(module, requires_grad):
@@ -888,23 +1015,36 @@ class flowAC(object):
                 min_qf_pi = torch.min(qf1_pi, qf2_pi)
 
             safety_penalty = torch.zeros_like(min_qf_pi)
-            jvp_loss = torch.tensor(0.0, device=self.device)
-            grad_q_norm = torch.tensor(0.0, device=self.device)
-            jvp_denom_mean = torch.tensor(0.0, device=self.device)
-            jvp_directional_abs = torch.tensor(0.0, device=self.device)
-            jvp_source = torch.tensor(0.0, device=self.device)
-            g_mid_mean = torch.tensor(0.0, device=self.device)
-            feas_gate_mean = torch.tensor(0.0, device=self.device)
-            feas_gate_min = torch.tensor(0.0, device=self.device)
-            feas_gate_max = torch.tensor(0.0, device=self.device)
-            reward_weight_mean = torch.tensor(1.0, device=self.device)
-            safe_weight_mean = torch.tensor(0.0, device=self.device)
-            feas_gate_risky_frac = torch.tensor(0.0, device=self.device)
+            zero_policy = min_qf_pi.new_tensor(0.0)
+            jvp_loss = zero_policy
+            grad_q_norm = zero_policy
+            jvp_denom_mean = zero_policy
+            jvp_directional_abs = zero_policy
+            jvp_source = zero_policy
+            normal_vel_mean = zero_policy
+            normal_vel_pos_frac = zero_policy
+            normal_vel_pos_energy = zero_policy
+            normal_vel_neg_energy = zero_policy
+            gate_active_frac = zero_policy
+            jvp_active_tensor = zero_policy
+            jvp_batch_size_eff = zero_policy
+            jvp_selected_frac = zero_policy
+            g_mid_mean = zero_policy
+            feas_gate_mean = zero_policy
+            feas_gate_min = zero_policy
+            feas_gate_max = zero_policy
+            reward_weight_mean = min_qf_pi.new_tensor(1.0)
+            safe_weight_mean = zero_policy
+            feas_gate_risky_frac = zero_policy
             reward_weight = torch.ones_like(min_qf_pi)
             safe_weight = torch.ones_like(min_qf_pi)
+            policy_update_index = int(self.policy_update_count)
             jvp_enabled = self.safe_env and self.safe_policy_loss and current_step_or_updates >= self.jvp_warmup_steps
+            jvp_active_this_update = jvp_enabled and (policy_update_index % self.jvp_update_interval == 0)
+            lambda_safe_eff_value = self._lambda_safe_eff(current_step_or_updates)
+            lambda_safe_eff = min_qf_pi.new_tensor(lambda_safe_eff_value)
             lambda_jvp_eff_value = self._lambda_jvp_eff(current_step_or_updates)
-            lambda_jvp_eff = torch.tensor(lambda_jvp_eff_value, device=self.device)
+            lambda_jvp_eff = min_qf_pi.new_tensor(lambda_jvp_eff_value)
 
             if self.safe_env and self.safe_policy_loss:
                 safety_flags = self.set_requires_grad(self.safety_critic, False)
@@ -912,11 +1052,39 @@ class flowAC(object):
                     qc_pi_risk = self._qc_risk_scalar(state_batch, action)
                     qc_pi_geom = self._qc_geom_scalar(state_batch, action)
                     safety_penalty = F.relu(qc_pi_risk - self.safe_threshold)
-                    g_mid = self._compute_g_mid_from_qc(qc_pi_risk.detach())
-                    if jvp_enabled:
-                        jvp_loss, grad_q_norm, jvp_denom_mean, jvp_directional_abs, jvp_source = self.compute_jvp_scd(
-                            state_batch, action, velocity_action, g_mid
+                    g_mid = self._compute_jvp_gate_from_qc(qc_pi_risk.detach())
+                    gate_detached = g_mid.detach()
+                    gate_active_frac = (gate_detached > 1e-3).float().mean()
+                    if jvp_active_this_update:
+                        jvp_indices = self._select_jvp_indices(g_mid)
+                        if jvp_indices is None:
+                            state_jvp = state_batch
+                            action_jvp = action
+                            velocity_jvp = velocity_action
+                            gate_jvp = g_mid
+                            selected_count = int(state_batch.shape[0])
+                        else:
+                            state_jvp = state_batch.index_select(0, jvp_indices)
+                            action_jvp = action.index_select(0, jvp_indices)
+                            velocity_jvp = velocity_action.index_select(0, jvp_indices)
+                            gate_jvp = g_mid.index_select(0, jvp_indices)
+                            selected_count = int(jvp_indices.numel())
+                        (
+                            jvp_loss,
+                            grad_q_norm,
+                            jvp_denom_mean,
+                            jvp_directional_abs,
+                            jvp_source,
+                            normal_vel_mean,
+                            normal_vel_pos_frac,
+                            normal_vel_pos_energy,
+                            normal_vel_neg_energy,
+                        ) = self.compute_jvp_scd(
+                            state_jvp, action_jvp, velocity_jvp, gate_jvp, one_sided=self.jvp_one_sided
                         )
+                        jvp_active_tensor = min_qf_pi.new_tensor(1.0)
+                        jvp_batch_size_eff = min_qf_pi.new_tensor(float(selected_count))
+                        jvp_selected_frac = min_qf_pi.new_tensor(float(selected_count) / max(1, int(state_batch.shape[0])))
                     g_mid_mean = g_mid.detach().mean()
                     qc_pi_risk_mean = qc_pi_risk.detach().mean()
                     qc_pi_geom_mean = qc_pi_geom.detach().mean()
@@ -947,12 +1115,12 @@ class flowAC(object):
                 policy_loss_terms = -min_qf_pi + alpha.detach() * kinetic
             if self.safe_env and self.safe_policy_loss:
                 if self.soft_feasibility_gate:
-                    policy_loss_terms = policy_loss_terms + safe_weight * self.lambda_safe * safety_penalty
+                    policy_loss_terms = policy_loss_terms + safe_weight * lambda_safe_eff * safety_penalty
                 else:
-                    policy_loss_terms = policy_loss_terms + self.lambda_safe * safety_penalty
+                    policy_loss_terms = policy_loss_terms + lambda_safe_eff * safety_penalty
 
             policy_loss = policy_loss_terms.mean()
-            if jvp_enabled:
+            if jvp_active_this_update:
                 policy_loss = policy_loss + lambda_jvp_eff * jvp_loss
 
         # Update policy
@@ -960,6 +1128,8 @@ class flowAC(object):
         self.scaler.scale(policy_loss).backward()
         self.scaler.step(self.policy_optim)
         self.scaler.update()
+
+        self.policy_update_count += 1
 
         if self.auto_alpha:
             # Update alpha (SAC-style on log_alpha; stable when alpha is small).
@@ -971,7 +1141,7 @@ class flowAC(object):
             self.scaler.scale(alpha_loss).backward()
             self.scaler.step(self.alpha_optim)
             self.scaler.update()
-        jvp_weighted = lambda_jvp_eff * jvp_loss if jvp_enabled else torch.tensor(0.0, device=self.device)
+        jvp_weighted = lambda_jvp_eff * jvp_loss if jvp_active_this_update else min_qf_pi.new_tensor(0.0)
         jvp_scd_value = float(jvp_loss.detach().item())
         jvp_weighted_value = float(jvp_weighted.detach().item())
         return {
@@ -991,6 +1161,10 @@ class flowAC(object):
             "safety/reward_weight_mean": float(reward_weight_mean.detach().item()),
             "safety/safe_weight_mean": float(safe_weight_mean.detach().item()),
             "safety/feas_gate_risky_frac": float(feas_gate_risky_frac.detach().item()),
+            "safety/lambda_safe_schedule_enabled": 1.0 if self.lambda_safe_schedule else 0.0,
+            "safety/lambda_safe_eff": float(lambda_safe_eff.detach().item()),
+            "safety/lambda_safe_start": float(self.lambda_safe_start),
+            "safety/lambda_safe_end": float(self.lambda_safe_end),
             "safety/lambda_jvp_schedule_enabled": 1.0 if self.lambda_jvp_schedule else 0.0,
             "safety/lambda_jvp_eff": float(lambda_jvp_eff.detach().item()),
             "safety/lambda_jvp_start": float(self.lambda_jvp_start),
@@ -999,11 +1173,27 @@ class flowAC(object):
             "loss/jvp_scd_x1e6": jvp_scd_value * 1e6,
             "loss/jvp_weighted": jvp_weighted_value,
             "loss/jvp_weighted_x1e6": jvp_weighted_value * 1e6,
+            "safety/jvp_loss": jvp_scd_value,
+            "safety/jvp_mean": float(jvp_directional_abs.detach().item()),
             "safety/g_mid_mean": float(g_mid_mean.detach().item()),
             "safety/grad_q_norm": float(grad_q_norm.detach().item()),
             "safety/jvp_denom_mean": float(jvp_denom_mean.detach().item()),
             "safety/jvp_directional_abs": float(jvp_directional_abs.detach().item()),
             "safety/jvp_source": float(jvp_source.detach().item()),
+            "safety/jvp_active": float(jvp_active_tensor.detach().item()),
+            "safety/jvp_batch_size_eff": float(jvp_batch_size_eff.detach().item()),
+            "safety/jvp_sample_mode": float(self._jvp_sample_mode_id()),
+            "safety/jvp_sample_mode_id": float(self._jvp_sample_mode_id()),
+            "safety/jvp_selected_frac": float(jvp_selected_frac.detach().item()),
+            "safety/jvp_update_interval": float(self.jvp_update_interval),
+            "safety/jvp_one_sided": 1.0 if self.jvp_one_sided else 0.0,
+            "safety/jvp_gate_mode": float(self._jvp_gate_mode_id()),
+            "safety/jvp_gate_mode_id": float(self._jvp_gate_mode_id()),
+            "safety/normal_vel_mean": float(normal_vel_mean.detach().item()),
+            "safety/normal_vel_pos_frac": float(normal_vel_pos_frac.detach().item()),
+            "safety/normal_vel_pos_energy": float(normal_vel_pos_energy.detach().item()),
+            "safety/normal_vel_neg_energy": float(normal_vel_neg_energy.detach().item()),
+            "safety/gate_active_frac": float(gate_active_frac.detach().item()),
         }
 
 
@@ -1046,7 +1236,7 @@ class flowAC(object):
                     extra_losses.append(float(extra_info["loss/safety_critic"]))
             log_info["safety_q/extra_updates"] = float(self.safety_q_extra_updates if self.high_fidelity_safety_q else 0)
             log_info["safety_q/extra_loss_mean"] = float(np.mean(extra_losses)) if extra_losses else 0.0
-            if self.high_fidelity_safety_q and self.diagnose_safety_q_geometry:
+            if self._should_diagnose_safety_q(total_numsteps):
                 log_info.update(self.safety_q_geometry_diagnostics(state_batch, action_batch, state_batch))
 
         # Update policy and alpha (with delayed update)

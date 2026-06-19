@@ -73,3 +73,11 @@ Run a short PointGoal1 job with `num_steps=20000`, `eval=False`, `save=False`. C
 - `jvp_selected_count` is about 1024 for batch 4096 in top-k mode
 - `jvp_active_this_update` alternates when interval is 2
 - no second-order graph through the safety critic is introduced
+
+## Implementation notes
+
+- Fast geometry defaults preserve full-batch JVP: `jvp_batch_size=0`, `jvp_sample_mode=full`, `jvp_update_interval=1`.
+- Optional one-sided JVP uses `relu(grad_QC dot velocity)^2`, leaving the detached safety normal path unchanged.
+- `jvp_gate_mode=unsafe_side` and `boundary_or_unsafe` extend the boundary gate without changing scalar safety penalty.
+- Periodic checkpoints are opt-in with `save=True --save_interval_steps N`; default `0` keeps old checkpoint behavior.
+- Optional vectorized env collection was not mixed into this implementation because safe batched cost/final-observation handling should be validated separately from the JVP change.
