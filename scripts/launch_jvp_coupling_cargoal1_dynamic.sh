@@ -2,6 +2,7 @@
 set -euo pipefail
 
 MODE="${1:-plan}"
+shift || true
 
 GPU_ID="${GPU_ID:-0}"
 MAX_PARALLEL="${MAX_PARALLEL:-4}"
@@ -30,6 +31,30 @@ queue_specs() {
     JSC_CG1_2:0 JSC_CG1_2:1 \
     JSC_CG1_3:0 JSC_CG1_3:1 \
     JSC_CG1_4:0 JSC_CG1_4:1
+}
+
+selected_specs() {
+  local group="$1"
+  shift || true
+  local seeds="0,1"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --seeds)
+        seeds="${2:-}"
+        shift 2
+        ;;
+      *)
+        echo "Unknown argument: $1" >&2
+        return 2
+        ;;
+    esac
+  done
+  local seed
+  IFS=',' read -ra seed_list <<< "$seeds"
+  for seed in "${seed_list[@]}"; do
+    [[ -n "$seed" ]] || continue
+    printf '%s:%s\n' "$group" "$seed"
+  done
 }
 
 tag_for_spec() {
@@ -178,6 +203,30 @@ run_all() {
   run_status_check
 }
 
+run_selected() {
+  local specs=("$@")
+  local spec failed_specs=()
+  if (( ${#specs[@]} == 0 )); then
+    echo "no selected JVP coupling CarGoal1 runs"
+    return 1
+  fi
+  for spec in "${specs[@]}"; do
+    if failed_log "$spec"; then
+      failed_specs+=("$spec")
+    fi
+  done
+  if (( ${#failed_specs[@]} > 0 )); then
+    echo "failed logs present; not rerunning automatically: ${failed_specs[*]}"
+    run_status_check
+    return 1
+  fi
+  for spec in "${specs[@]}"; do
+    start_run "$spec" || true
+  done
+  monitor_once
+  run_status_check
+}
+
 stop_sessions() {
   for sess in $(tmux ls 2>/dev/null | awk -F: '/^jsc_cg1_/ {print $1}'); do
     tmux kill-session -t "$sess"
@@ -199,8 +248,12 @@ case "$MODE" in
   stop)
     stop_sessions
     ;;
+  JSC_CG1_1|JSC_CG1_1_C2_safe045_bw025|JSC_CG1_2|JSC_CG1_2_C2_safe045_bw030|JSC_CG1_3|JSC_CG1_3_C2_safe050_bw025|JSC_CG1_4|JSC_CG1_4_G4_safe060_bw025)
+    mapfile -t selected < <(selected_specs "$MODE" "$@")
+    run_selected "${selected[@]}"
+    ;;
   *)
-    echo "Usage: bash scripts/launch_jvp_coupling_cargoal1_dynamic.sh plan|all|status|stop" >&2
+    echo "Usage: bash scripts/launch_jvp_coupling_cargoal1_dynamic.sh plan|all|status|stop|JSC_CG1_1 [--seeds 2]" >&2
     exit 2
     ;;
 esac
