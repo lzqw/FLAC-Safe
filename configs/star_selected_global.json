@@ -1,0 +1,33 @@
+{
+  "status": "parallel/performance selected only; STAR hyperparameters pending actor/executor tuning",
+  "parallel": {
+    "RUNS_PER_GPU": 3,
+    "MAX_TOTAL_RUNS": 6,
+    "CPU_CORES_PER_RUN": "unbound_initial; BLAS threads fixed to 1",
+    "GPU_IDS": [
+      0,
+      1
+    ],
+    "compile_model": false,
+    "num_envs": 1,
+    "disable_wandb": true,
+    "wandb_log_interval_steps": 1000,
+    "mechanism_log_interval_steps": 1000,
+    "action_diagnostics_interval_steps": 1000,
+    "online_eval_mode": "none",
+    "source": "reports/star_goal/parallel_choice.md",
+    "git_commit": "de4ff66"
+  },
+  "shared_backbone": {
+    "batch_size": 256,
+    "hidden_size": 256,
+    "updates_per_step": 1,
+    "recent_fraction": 0.0,
+    "binary_cost": true
+  },
+  "eval_protocol": {
+    "online_eval_mode": "none",
+    "final_eval_seeds": "pending"
+  },
+  "git_commit": "de4ff66"
+}

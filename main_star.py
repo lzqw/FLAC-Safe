@@ -203,6 +203,46 @@ def append_csv(path: Path, row: dict, fields: list[str]) -> None:
             writer.writeheader()
         writer.writerow({key: row.get(key, "") for key in fields})
 
+class MetricAccumulator:
+    """In-memory metric reducer used to avoid per-step logging I/O."""
+
+    def __init__(self) -> None:
+        self._numeric: Dict[str, list[float]] = {}
+        self._last: Dict[str, object] = {}
+
+    def add(self, metrics: dict) -> None:
+        for key, value in metrics.items():
+            if isinstance(value, (int, float, np.floating, np.integer)) and np.isfinite(float(value)):
+                self._numeric.setdefault(key, []).append(float(value))
+            else:
+                self._last[key] = value
+
+    def empty(self) -> bool:
+        return not self._numeric and not self._last
+
+    def flush(self) -> dict:
+        out = {}
+        for key, values in self._numeric.items():
+            arr = np.asarray(values, dtype=np.float64)
+            out[key] = float(arr.mean())
+            out[f"{key}/min"] = float(arr.min())
+            out[f"{key}/max"] = float(arr.max())
+            out[f"{key}/last"] = float(arr[-1])
+        out.update(self._last)
+        self._numeric.clear()
+        self._last.clear()
+        return out
+
+
+def wandb_enabled(config) -> bool:
+    return not bool(getattr(config, "disable_wandb", False))
+
+
+def maybe_wandb_log(config, payload: dict, step: int) -> None:
+    if wandb_enabled(config) and payload:
+        wandb.log(payload, step=step)
+
+
 
 def serializable_config(config) -> dict:
     return {key: config[key] for key in config if not str(key).startswith("_")}
@@ -372,7 +412,7 @@ def evaluate(agent, config, total_steps: int, run_dir: Path, run_name: str) -> T
     for prefix, metrics in (("eval/raw", raw), ("eval/star_exec", star_exec)):
         for key, value in metrics.items():
             payload[f"{prefix}/{key}"] = value
-    wandb.log(payload, step=total_steps)
+    maybe_wandb_log(config, payload, total_steps)
     print(
         "STAR_EVAL step={} eval/raw/reward={:.6g} eval/raw/episode_cost={:.6g} "
         "eval/raw/violation_rate={:.6g} eval/star_exec/reward={:.6g} "
@@ -391,14 +431,16 @@ def evaluate(agent, config, total_steps: int, run_dir: Path, run_name: str) -> T
 
 
 def env_interaction_metrics(info: Dict[str, float | bool | str], cost: float, config) -> Dict[str, float]:
-    risk = float(info.get("selected_predicted_risk", 0.0))
-    any_unsafe = bool(info.get("any_shadow_predicted_unsafe", False))
+    has_diag = bool(info.get("has_action_diagnostics", True))
+    risk = float(info.get("selected_predicted_risk", 0.0)) if has_diag else 0.0
+    any_unsafe = bool(info.get("any_shadow_predicted_unsafe", False)) if has_diag else False
     found_but_not_executed = (
-        any_unsafe
+        has_diag
+        and any_unsafe
         and risk <= float(config.star_risk_threshold)
         and float(cost) <= 0.0
     )
-    near_boundary = abs(risk - float(config.star_risk_threshold)) <= float(config.boundary_epsilon)
+    near_boundary = has_diag and abs(risk - float(config.star_risk_threshold)) <= float(config.boundary_epsilon)
     boundary_safe = near_boundary and float(cost) <= 0.0
     return {
         "star/executed_violation_rate": float(cost > 0),
@@ -456,6 +498,7 @@ def mechanism_row(run_name: str, config, step: int, update: int, log: dict, inte
 
 
 def train_loop(config) -> None:
+    torch.set_num_threads(1)
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
     if torch.cuda.is_available():
@@ -482,8 +525,15 @@ def train_loop(config) -> None:
     best_raw_reward = -1e9
     eval_interval = max(1, int(config.eval_interval_steps or config.eval_numsteps))
     save_interval = int(config.save_interval_steps)
-    metric_interval = max(1, int(config.metric_log_interval_steps))
+    metric_interval = max(1, int(getattr(config, "mechanism_log_interval_steps", config.metric_log_interval_steps)))
+    wandb_interval = max(1, int(getattr(config, "wandb_log_interval_steps", 1000)))
+    action_diag_interval = max(1, int(getattr(config, "action_diagnostics_interval_steps", 1000)))
+    online_eval_mode = str(getattr(config, "online_eval_mode", "full"))
+    online_eval_modes = str(getattr(config, "online_eval_modes", "both"))
     last_metric_step = -metric_interval
+    last_wandb_step = -wandb_interval
+    update_metrics = MetricAccumulator()
+    interaction_metrics = MetricAccumulator()
     start_time = time.perf_counter()
     env_time = 0.0
     update_time = 0.0
@@ -521,6 +571,7 @@ def train_loop(config) -> None:
             if total_steps < config.start_steps:
                 action = env.action_space.sample()
                 agent.last_action_info = {
+                    "has_action_diagnostics": False,
                     "execution_mode": "random",
                     "candidate_count": 1,
                     "safe_candidate_fraction": 0.0,
@@ -539,6 +590,7 @@ def train_loop(config) -> None:
                     evaluate=False,
                     execution_mode=execution_mode_for_config(config),
                     total_numsteps=total_steps,
+                    diagnostics=(total_steps % action_diag_interval == 0),
                 )
 
             if total_steps >= config.start_steps and len(memory) >= config.batch_size:
@@ -547,7 +599,10 @@ def train_loop(config) -> None:
                     log = agent.update_parameters(memory, config.batch_size, updates, total_steps)
                     update_time += time.perf_counter() - t0
                     if log:
-                        wandb.log(log, step=total_steps)
+                        update_metrics.add(log)
+                        if total_steps - last_wandb_step >= wandb_interval:
+                            maybe_wandb_log(config, update_metrics.flush(), total_steps)
+                            last_wandb_step = total_steps
                         if total_steps - last_metric_step >= metric_interval:
                             append_csv(
                                 run_dir / "mechanism.csv",
@@ -579,10 +634,13 @@ def train_loop(config) -> None:
             episode_cost += cost
             train_total_cost += cost
             last_interaction_log = env_interaction_metrics(agent.last_action_info, cost, config)
-            wandb.log(last_interaction_log, step=total_steps)
+            interaction_metrics.add(last_interaction_log)
+            if total_steps - last_wandb_step >= wandb_interval:
+                maybe_wandb_log(config, interaction_metrics.flush(), total_steps)
+                last_wandb_step = total_steps
             state = next_state
 
-            if config.eval and total_steps % eval_interval == 0:
+            if config.eval and online_eval_mode != "none" and total_steps % eval_interval == 0:
                 t0 = time.perf_counter()
                 raw_eval, exec_eval = evaluate(agent, config, total_steps, run_dir, run_name)
                 eval_time += time.perf_counter() - t0
@@ -638,7 +696,8 @@ def train_loop(config) -> None:
             },
             EFFICIENCY_FIELDS,
         )
-        wandb.log(
+        maybe_wandb_log(
+            config,
             {
                 "train/reward": episode_reward,
                 "train/cost": episode_cost,
@@ -653,7 +712,7 @@ def train_loop(config) -> None:
                 "efficiency/gpu_memory_peak_mb": gpu_memory_peak_mb(agent),
                 "efficiency/cost_critic_forward_calls": float(agent.cost_critic_forward_calls),
             },
-            step=total_steps,
+            total_steps,
         )
         print(
             "STAR_TRAIN episode={} step={} reward={:.6g} cost={:.6g} train_cost_rate={:.8g} "
@@ -671,8 +730,11 @@ def train_loop(config) -> None:
         )
         if total_steps >= config.num_steps:
             break
+    if bool(getattr(config, "final_checkpoint", False)):
+        agent.save_checkpoint(str(checkpoint_dir), "final")
     env.close()
-    wandb.finish()
+    if wandb_enabled(config):
+        wandb.finish()
 
 
 def build_arg_config() -> ARGConfig:
@@ -687,6 +749,9 @@ if __name__ == "__main__":
     arg.parser("STAR: Safety-Shadow Trust-Region Actor-Critic")
     config = star_default_config.copy()
     config.update(arg)
-    wandb.init(project=config.algo, name=f"{config.task}_{config.method}_seed{config.seed}", config=config)
+    if bool(getattr(config, "disable_wandb", False)):
+        os.environ["WANDB_MODE"] = "disabled"
+    if wandb_enabled(config):
+        wandb.init(project=config.algo, name=f"{config.task}_{config.method}_seed{config.seed}", config=config)
     print(f">>>> Training STAR method={config.method} on {config.task}", flush=True)
     train_loop(config)

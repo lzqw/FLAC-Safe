@@ -1,0 +1,3 @@
+task,run_name,seed,gpu,final_step,wall_time_sec,transitions_per_sec,updates_per_sec,env_time_sec,gradient_update_time_sec,eval_time_sec,gpu_util_mean,gpu_util_p95,gpu_memory_peak_mb,cost_critic_forward_calls,train_cost_rate,status
+SafetyPointGoal1-v0,opt_phase2_pg1_gpu0_seed910,910,0,30000,1267.086643201299,23.67636038227417,19.730300318561806,42.99173026718199,1042.564034471754,0.0,13.28968253968254,15.0,777.0,122000000,0.027466666666666667,completed
+SafetyCarGoal1-v0,opt_phase2_cg1_gpu1_seed910,910,1,30000,1279.2664543269202,23.450939324274202,19.54244943689517,59.68825752334669,1037.2500043353066,0.0,13.468253968253968,15.0,777.0,122000000,0.05506666666666667,completed

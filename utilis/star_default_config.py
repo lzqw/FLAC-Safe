@@ -64,5 +64,15 @@ star_default_config = Config(
         "ablation_group": "main",
         "ablation_name": "main",
         "metric_log_interval_steps": 1000,
+        "wandb_log_interval_steps": 1000,
+        "mechanism_log_interval_steps": 1000,
+        "disable_wandb": True,
+        "flush_log_interval_steps": 5000,
+        "action_diagnostics_interval_steps": 1000,
+        "online_eval_mode": "none",
+        "online_eval_modes": "both",
+        "final_checkpoint": True,
+        "compile_model": False,
+        "compile_mode": "reduce-overhead",
     }
 )

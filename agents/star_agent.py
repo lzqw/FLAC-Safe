@@ -242,6 +242,7 @@ class STARAgent(SACBase):
         threshold: float,
         margin: float,
         mean_index: int,
+        diagnostics: bool = True,
     ) -> Tuple[int, Dict[str, float | bool]]:
         safe = risk_values <= (threshold - margin)
         if torch.any(safe):
@@ -256,8 +257,22 @@ class STARAgent(SACBase):
             scores[~tied] = -torch.inf
             index = int(torch.argmax(scores).item())
             fallback = True
+        if not diagnostics:
+            return index, {
+                "has_action_diagnostics": False,
+                "safe_candidate_fraction": 0.0,
+                "execution_fallback": bool(fallback),
+                "selected_predicted_risk": 0.0,
+                "selected_predicted_reward": 0.0,
+                "mean_action_predicted_risk": 0.0,
+                "any_shadow_predicted_unsafe": False,
+                "shadow_predicted_unsafe_fraction": 0.0,
+                "selected_from_mean": bool(index == mean_index),
+                "action_candidate_spread": 0.0,
+            }
         spread = candidates.std(dim=0).mean()
         return index, {
+            "has_action_diagnostics": True,
             "safe_candidate_fraction": float(safe.float().mean().item()),
             "execution_fallback": bool(fallback),
             "selected_predicted_risk": float(risk_values[index].item()),
@@ -270,11 +285,27 @@ class STARAgent(SACBase):
         }
 
     @torch.no_grad()
-    def _raw_action_info(self, state_tensor: torch.Tensor, action: torch.Tensor, mean_action: torch.Tensor) -> Dict[str, float | bool | str]:
+    def _raw_action_info(self, state_tensor: torch.Tensor, action: torch.Tensor, mean_action: torch.Tensor, diagnostics: bool = True) -> Dict[str, float | bool | str]:
+        if not diagnostics:
+            return {
+                "has_action_diagnostics": False,
+                "execution_mode": "raw",
+                "candidate_count": 1,
+                "safe_candidate_fraction": 0.0,
+                "execution_fallback": False,
+                "selected_predicted_risk": 0.0,
+                "selected_predicted_reward": 0.0,
+                "mean_action_predicted_risk": 0.0,
+                "any_shadow_predicted_unsafe": False,
+                "shadow_predicted_unsafe_fraction": 0.0,
+                "selected_from_mean": False,
+                "action_candidate_spread": 0.0,
+            }
         selected_risk = self._cost_plus(state_tensor, action).view(-1)[0]
         selected_reward = self._reward_min(state_tensor, action).view(-1)[0]
         mean_risk = self._cost_plus(state_tensor, mean_action).view(-1)[0]
         return {
+            "has_action_diagnostics": True,
             "execution_mode": "raw",
             "candidate_count": 1,
             "safe_candidate_fraction": 0.0,
@@ -295,6 +326,7 @@ class STARAgent(SACBase):
         evaluate: bool = False,
         execution_mode: str = "raw",
         total_numsteps: int | None = None,
+        diagnostics: bool = True,
     ):
         state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         state_tensor = self.normalize_state(state_tensor)
@@ -309,7 +341,7 @@ class STARAgent(SACBase):
                 action = mean_action
             else:
                 action, _, _ = self.policy.sample(state_tensor)
-            self.last_action_info = self._raw_action_info(state_tensor, action, mean_action)
+            self.last_action_info = self._raw_action_info(state_tensor, action, mean_action, diagnostics=diagnostics)
             return action.cpu().numpy()[0].clip(self.action_space.low, self.action_space.high)
 
         _, _, mean_action = self.policy.sample(state_tensor)
@@ -326,6 +358,7 @@ class STARAgent(SACBase):
             self.risk_threshold,
             self.star_exec_margin,
             mean_index=0,
+            diagnostics=diagnostics,
         )
         info["execution_mode"] = "star_exec"
         info["candidate_count"] = int(candidates.shape[0])
