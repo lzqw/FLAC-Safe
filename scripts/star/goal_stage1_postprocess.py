@@ -92,8 +92,9 @@ def run_postprocess() -> None:
         "--report-dir",
         str(REPORT),
     ])
+    sh(["python", "scripts/star/decide_stage1.py", "--report-dir", str(REPORT)])
     DONE_MARKER.write_text(datetime.now().isoformat() + "\n")
-    write_status("stage1_postprocess_complete", "Stage1 offline raw evaluation and shadow-risk diagnostics completed. Next step is candidate filtering and possible risk-scale calibration.")
+    write_status("stage1_postprocess_complete", "Stage1 offline raw evaluation, shadow-risk diagnostics, and candidate/risk-scale decision completed.")
 
 
 def wait_loop(poll_seconds: int) -> None:
