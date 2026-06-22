@@ -18,6 +18,7 @@ REPORT = Path("reports/star_goal")
 LOG_ROOT = Path("logs/star_goal/actor_stage1")
 MANIFEST = REPORT / "actor_stage1_manifest.csv"
 RESULT_PREFIX = "star_tune_actor_stage1"
+RESULT_SHA = os.environ.get("STAR_STAGE1_RESULT_SHA", "3393af8")
 TASKS = ["SafetyPointGoal1-v0", "SafetyCarGoal1-v0"]
 SEED = 10
 STEPS = 100000
@@ -61,7 +62,7 @@ def git_dirty() -> str:
 
 
 def output_root() -> str:
-    return f"results/{RESULT_PREFIX}_{git_sha()}"
+    return f"results/{RESULT_PREFIX}_{RESULT_SHA}"
 
 
 def tmux_sessions() -> set[str]:
@@ -176,7 +177,7 @@ def append_manifest(row: dict) -> None:
     exists = MANIFEST.exists()
     fields = [
         "time", "stage", "status", "config", "task", "seed", "gpu", "session",
-        "run_name", "run_dir", "log_path", "command", "git_commit", "git_dirty", "hostname",
+        "run_name", "run_dir", "log_path", "command", "git_commit", "git_dirty", "result_sha", "hostname",
     ]
     with MANIFEST.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
@@ -234,6 +235,7 @@ def scheduler_loop(poll: int = 20) -> None:
                 "command": cmd,
                 "git_commit": git_sha(),
                 "git_dirty": git_dirty(),
+                "result_sha": RESULT_SHA,
                 "hostname": socket.gethostname(),
             })
             running_counts[gpu] += 1
