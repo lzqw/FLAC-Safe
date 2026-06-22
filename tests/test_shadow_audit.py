@@ -56,6 +56,19 @@ def test_log_mean_exp_k1_equals_single_value():
     assert torch.allclose(rho, q.squeeze(1))
 
 
+def test_shadow_spread_k1_is_zero_not_nan():
+    policy = make_policy()
+    reference = make_policy()
+    reference.freeze()
+    state = torch.randn(3, 3)
+    audit = ShadowAuditModule(action_dim=2, shadow_k=1)
+
+    batch = audit.generate_shadow_actions(policy, reference, state)
+
+    assert torch.all(torch.isfinite(batch.spread))
+    assert torch.allclose(batch.spread, torch.zeros_like(batch.spread))
+
+
 def test_log_mean_exp_matches_manual_result():
     q = torch.tensor([[0.1, 0.2, 0.4], [0.0, 0.5, 0.8]])
     temperature = 0.2

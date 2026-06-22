@@ -124,8 +124,8 @@ class STARAgent(SACBase):
     def _lagrange_value(self) -> torch.Tensor:
         return F.softplus(self.lagrange_multiplier)
 
-    def _update_lagrange(self, violation: torch.Tensor) -> torch.Tensor:
-        loss = -(self._lagrange_value() * violation.detach()).mean()
+    def _update_lagrange(self, residual: torch.Tensor) -> torch.Tensor:
+        loss = -(self._lagrange_value() * residual.detach()).mean()
         self.lagrange_optim.zero_grad(set_to_none=True)
         loss.backward()
         self.lagrange_optim.step()
@@ -141,6 +141,8 @@ class STARAgent(SACBase):
             action = sac_info["action"]
             actor_loss = sac_loss
             pointwise = torch.zeros((), device=self.device)
+            lagrange_mean_qc = torch.zeros((), device=self.device)
+            lagrange_residual = torch.zeros((), device=self.device)
             shadow_penalty = torch.zeros((), device=self.device)
             kl_loss = torch.zeros((), device=self.device)
             shadow_stats: Dict[str, torch.Tensor] = {}
@@ -150,8 +152,9 @@ class STARAgent(SACBase):
                 pointwise = self._pointwise_penalty(state, action)
                 actor_loss = actor_loss + self.star_lambda * pointwise
             elif self.method == "sac_lag":
-                pointwise = self._pointwise_penalty(state, action)
-                actor_loss = actor_loss + self._lagrange_value().detach() * pointwise
+                lagrange_mean_qc = self._cost_plus(state, action).mean()
+                lagrange_residual = lagrange_mean_qc - self.risk_threshold
+                actor_loss = actor_loss + self._lagrange_value().detach() * lagrange_mean_qc
             elif self._method_uses_shadow_loss():
                 shadow_penalty, shadow_stats = self._shadow_actor_terms(state)
                 actor_loss = actor_loss + self.star_lambda * shadow_penalty
@@ -167,7 +170,7 @@ class STARAgent(SACBase):
             alpha_loss = self.update_alpha(log_pi)
 
             if self.method == "sac_lag":
-                self._update_lagrange(pointwise)
+                self._update_lagrange(lagrange_residual)
 
             self.actor_updates += 1
             self.reference_age += 1
@@ -196,13 +199,17 @@ class STARAgent(SACBase):
                 "star/any_unsafe_shadow_rate": float(shadow_stats.get("any_unsafe", torch.zeros((), device=self.device)).detach().item()),
                 "star/hidden_unsafe_rate": float(shadow_stats.get("hidden", torch.zeros((), device=self.device)).detach().item()),
                 "star/shadow_risk_mean": float(rho.mean().detach().item()) if rho is not None else 0.0,
-                "star/shadow_risk_max_mean": float(rho.max().detach().item()) if rho is not None else 0.0,
+                "star/shadow_risk_batch_max": float(rho.max().detach().item()) if rho is not None else 0.0,
+                "star/shadow_risk_max_mean": float(q_shadow.max(dim=1).values.mean().detach().item()) if q_shadow is not None else 0.0,
                 "star/shadow_q_mean": float(q_shadow.mean().detach().item()) if q_shadow is not None else 0.0,
                 "star/shadow_q_std": float(q_shadow.std(unbiased=False).detach().item()) if q_shadow is not None else 0.0,
                 "star/actor_mean_action_risk": float(shadow_stats.get("actor_mean_action_risk", torch.zeros((), device=self.device)).detach().item()),
                 "star/cost_grad_leak": float(cost_grad_leak),
                 "star/pointwise_penalty": float(pointwise.detach().item()),
                 "star/lagrange": float(self._lagrange_value().detach().item()),
+                "star/lagrange_value": float(self._lagrange_value().detach().item()),
+                "star/lagrange_residual": float(lagrange_residual.detach().item()),
+                "star/lagrange_mean_qc": float(lagrange_mean_qc.detach().item()),
                 "efficiency/cost_critic_forward_calls": float(self.cost_critic_forward_calls),
             }
             return log
@@ -263,6 +270,25 @@ class STARAgent(SACBase):
         }
 
     @torch.no_grad()
+    def _raw_action_info(self, state_tensor: torch.Tensor, action: torch.Tensor, mean_action: torch.Tensor) -> Dict[str, float | bool | str]:
+        selected_risk = self._cost_plus(state_tensor, action).view(-1)[0]
+        selected_reward = self._reward_min(state_tensor, action).view(-1)[0]
+        mean_risk = self._cost_plus(state_tensor, mean_action).view(-1)[0]
+        return {
+            "execution_mode": "raw",
+            "candidate_count": 1,
+            "safe_candidate_fraction": 0.0,
+            "execution_fallback": False,
+            "selected_predicted_risk": float(selected_risk.item()),
+            "selected_predicted_reward": float(selected_reward.item()),
+            "mean_action_predicted_risk": float(mean_risk.item()),
+            "any_shadow_predicted_unsafe": bool(selected_risk.item() > self.risk_threshold),
+            "shadow_predicted_unsafe_fraction": float(selected_risk.item() > self.risk_threshold),
+            "selected_from_mean": bool(torch.allclose(action, mean_action, atol=1e-6)),
+            "action_candidate_spread": 0.0,
+        }
+
+    @torch.no_grad()
     def select_action(
         self,
         state,
@@ -278,24 +304,12 @@ class STARAgent(SACBase):
             use_execution = False
 
         if execution_mode == "raw" or not use_execution:
+            _, _, mean_action = self.policy.sample(state_tensor)
             if evaluate:
-                _, _, mean_action = self.policy.sample(state_tensor)
                 action = mean_action
             else:
                 action, _, _ = self.policy.sample(state_tensor)
-            self.last_action_info = {
-                "execution_mode": "raw",
-                "candidate_count": 1,
-                "safe_candidate_fraction": 0.0,
-                "execution_fallback": False,
-                "selected_predicted_risk": 0.0,
-                "selected_predicted_reward": 0.0,
-                "mean_action_predicted_risk": 0.0,
-                "any_shadow_predicted_unsafe": False,
-                "shadow_predicted_unsafe_fraction": 0.0,
-                "selected_from_mean": True,
-                "action_candidate_spread": 0.0,
-            }
+            self.last_action_info = self._raw_action_info(state_tensor, action, mean_action)
             return action.cpu().numpy()[0].clip(self.action_space.low, self.action_space.high)
 
         _, _, mean_action = self.policy.sample(state_tensor)

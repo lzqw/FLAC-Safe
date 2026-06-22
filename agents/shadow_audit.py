@@ -128,7 +128,7 @@ class ShadowAuditModule(nn.Module):
             xi = torch.randn_like(mu_beta)
         pre_tanh = mu_beta + log_std_beta.exp() * eps + self.shadow_local_std * xi
         actions = policy.squash(pre_tanh)
-        spread = actions.std(dim=1).mean(dim=-1, keepdim=True)
+        spread = actions.std(dim=1, unbiased=False).mean(dim=-1, keepdim=True)
         return ShadowBatch(actions=actions, beta=beta, spread=spread)
 
     def conservative_cost(self, cost_critic, state: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:

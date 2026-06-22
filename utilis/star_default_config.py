@@ -34,6 +34,7 @@ star_default_config = Config(
         "cost_critic_mode": "reachability",
         "cost_critic_reduce": "max",
         "binary_cost": True,
+        "env_cost_limit": 25.0,
         "star_risk_threshold": 0.10,
         "shadow_k": 16,
         "shadow_aggregation": "log_mean_exp",

@@ -44,6 +44,12 @@ class ParamCostCritic(nn.Module):
         return q, q
 
 
+class PositiveActionCostCritic(nn.Module):
+    def forward(self, state, action):
+        q = action.pow(2).sum(dim=-1, keepdim=True) + 0.5
+        return q, q
+
+
 def test_shadow_loss_gives_actor_gradient_but_not_cost_critic_gradient():
     torch.manual_seed(1)
     obs_space, action_space = make_spaces()
@@ -92,6 +98,38 @@ def test_executor_falls_back_to_minimum_risk_candidate():
     )
     assert selected == 2
     assert info["execution_fallback"] is True
+
+
+def test_raw_select_action_records_predicted_risk_without_changing_execution():
+    torch.manual_seed(4)
+    obs_space, action_space = make_spaces()
+    agent = STARAgent(obs_space.shape[0], action_space, make_config(method="sac"))
+    agent.cost_critic = PositiveActionCostCritic()
+    state = np.random.randn(obs_space.shape[0]).astype(np.float32)
+
+    action = agent.select_action(state, evaluate=True, execution_mode="raw")
+    info = agent.last_action_info
+
+    assert action.shape == action_space.shape
+    assert info["execution_mode"] == "raw"
+    assert info["candidate_count"] == 1
+    assert info["selected_predicted_risk"] > 0.0
+    assert info["mean_action_predicted_risk"] > 0.0
+    assert "selected_predicted_reward" in info
+
+
+def test_sac_lag_local_logs_residual_and_mean_qc():
+    torch.manual_seed(5)
+    obs_space, action_space = make_spaces()
+    cfg = make_config(method="sac_lag")
+    agent = STARAgent(obs_space.shape[0], action_space, cfg)
+    state = torch.randn(cfg.batch_size, obs_space.shape[0])
+
+    stats = agent.update_actor(state)
+
+    assert "star/lagrange_residual" in stats
+    assert "star/lagrange_value" in stats
+    assert "star/lagrange_mean_qc" in stats
 
 
 def test_checkpoint_save_load_restores_training_state(tmp_path):
