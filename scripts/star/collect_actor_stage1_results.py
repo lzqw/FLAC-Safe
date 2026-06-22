@@ -104,7 +104,7 @@ def eval_summary(rows: list[dict], mode: str) -> dict:
     if not selected:
         return {}
     return {
-        f"{mode}_return": avg([to_float(row.get("episode_return")) for row in selected]),
+        f"{mode}_return": avg([to_float(row.get("episode_reward", row.get("episode_return"))) for row in selected]),
         f"{mode}_cost": avg([to_float(row.get("episode_cost")) for row in selected]),
         f"{mode}_evr": avg([to_float(row.get("violation_rate")) for row in selected]),
         f"{mode}_success": avg([to_float(row.get("success")) for row in selected]),
@@ -187,7 +187,7 @@ def run_summary(run_dir: Path, log_root: Path | None) -> dict:
         "star_risk_threshold": meta.get("star_risk_threshold", ""),
         "star_kl_coef": meta.get("star_kl_coef", ""),
         "star_ref_update_interval": meta.get("star_ref_update_interval", ""),
-        "score": math.nan,
+        "debug_score": math.nan,
         "decision": "",
     }
 
@@ -229,16 +229,16 @@ def run_summary(run_dir: Path, log_root: Path | None) -> dict:
     psvr = to_float(row["pSVR"])
     spread = to_float(row["candidate_spread"])
     speed = to_float(row["env_steps_per_second"])
-    score = reward_metric - 0.08 * cost_metric
+    debug_score = reward_metric - 0.08 * cost_metric
     if not math.isnan(psvr):
-        score -= 2.0 * abs(psvr - 0.35)
+        debug_score -= 2.0 * abs(psvr - 0.35)
     if not math.isnan(spread):
-        score += min(spread, 2.0)
+        debug_score += min(spread, 2.0)
     if not math.isnan(speed):
-        score += 0.01 * min(speed, 80.0)
+        debug_score += 0.01 * min(speed, 80.0)
     if has_error:
-        score = -1e9
-    row["score"] = score
+        debug_score = -1e9
+    row["debug_score"] = debug_score
 
     if has_error:
         row["decision"] = "reject_error"
@@ -269,7 +269,7 @@ def aggregate(rows: list[dict]) -> list[dict]:
             "runs": len(items),
             "completed": sum(to_int(item["completed"]) for item in items),
             "errors": sum(to_int(item["has_error"]) for item in items),
-            "mean_score": avg([to_float(item["score"]) for item in items]),
+            "mean_debug_score": avg([to_float(item["debug_score"]) for item in items]),
             "mean_raw_return": avg([to_float(item["raw_return"]) for item in items]),
             "mean_raw_cost": avg([to_float(item["raw_cost"]) for item in items]),
             "mean_train_reward_last3": avg([to_float(item["train_avg_last3_reward"]) for item in items]),
@@ -280,7 +280,7 @@ def aggregate(rows: list[dict]) -> list[dict]:
             "mean_candidate_spread": avg([to_float(item["candidate_spread"]) for item in items]),
             "mean_speed": avg([to_float(item["env_steps_per_second"]) for item in items]),
         })
-    return sorted(out, key=lambda row: to_float(row["mean_score"], -1e9), reverse=True)
+    return sorted(out, key=lambda row: (row["task"], row["config"]))
 
 
 def render_markdown(rows: list[dict], groups: list[dict], report_dir: Path) -> None:
@@ -291,13 +291,13 @@ def render_markdown(rows: list[dict], groups: list[dict], report_dir: Path) -> N
         "",
         "## Group Ranking",
         "",
-        "| Rank | Config | Task | Completed | Score | Raw Return | Raw Cost | Train Last3 Reward | Train Last3 Cost | pSVR | Hidden Unsafe | Spread | Speed |",
+        "| Config | Task | Completed | Debug Score | Raw Return | Raw Cost | Train Last3 Reward | Train Last3 Cost | pSVR | Hidden Unsafe | Spread | Speed |",
         "| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for idx, row in enumerate(groups, start=1):
+    for row in groups:
         lines.append(
-            f"| {idx} | {row['config']} | {row['task']} | {row['completed']}/{row['runs']} | "
-            f"{fmt(row['mean_score'])} | {fmt(row['mean_raw_return'])} | {fmt(row['mean_raw_cost'])} | "
+            f"| {row['config']} | {row['task']} | {row['completed']}/{row['runs']} | "
+            f"{fmt(row['mean_debug_score'])} | {fmt(row['mean_raw_return'])} | {fmt(row['mean_raw_cost'])} | "
             f"{fmt(row['mean_train_reward_last3'])} | {fmt(row['mean_train_cost_last3'])} | "
             f"{fmt(row['mean_pSVR'])} | {fmt(row['mean_hidden_unsafe_rate'])} | "
             f"{fmt(row['mean_candidate_spread'])} | {fmt(row['mean_speed'])} |"
@@ -306,13 +306,13 @@ def render_markdown(rows: list[dict], groups: list[dict], report_dir: Path) -> N
         "",
         "## Run Details",
         "",
-        "| Config | Task | Seed | Status | Step | Decision | Score | Raw Return | Raw Cost | Train Last3 Reward | Train Last3 Cost | Cost Rate | pSVR | Hidden Unsafe | Checkpoint |",
+        "| Config | Task | Seed | Status | Step | Decision | Debug Score | Raw Return | Raw Cost | Train Last3 Reward | Train Last3 Cost | Cost Rate | pSVR | Hidden Unsafe | Checkpoint |",
         "| --- | --- | ---: | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ])
     for row in sorted(rows, key=lambda x: (x["task"], x["config"], str(x["seed"]))):
         lines.append(
             f"| {row['config']} | {row['task']} | {row['seed']} | {row['status']} | {row['final_step']} | "
-            f"{row['decision']} | {fmt(row['score'])} | {fmt(row['raw_return'])} | {fmt(row['raw_cost'])} | "
+            f"{row['decision']} | {fmt(row['debug_score'])} | {fmt(row['raw_return'])} | {fmt(row['raw_cost'])} | "
             f"{fmt(row['train_avg_last3_reward'])} | {fmt(row['train_avg_last3_cost'])} | "
             f"{fmt(row['train_cost_rate'], 4)} | {fmt(row['pSVR'])} | {fmt(row['hidden_unsafe_rate'])} | {bool(row['checkpoint'])} |"
         )
@@ -339,11 +339,11 @@ def main() -> None:
         "pSVR", "any_unsafe_shadow_rate", "hidden_unsafe_rate", "shadow_risk_mean", "shadow_risk_max_mean",
         "actor_mean_action_risk", "kl_mean", "candidate_spread", "shadow_penalty",
         "shadow_k", "shadow_temperature", "star_lambda", "star_risk_threshold", "star_kl_coef", "star_ref_update_interval",
-        "score", "decision", "checkpoint", "eval_source", "run_dir", "error_detail",
+        "debug_score", "decision", "checkpoint", "eval_source", "run_dir", "error_detail",
     ]
     group_rows = aggregate(rows)
     group_fields = [
-        "config", "task", "runs", "completed", "errors", "mean_score", "mean_raw_return", "mean_raw_cost",
+        "config", "task", "runs", "completed", "errors", "mean_debug_score", "mean_raw_return", "mean_raw_cost",
         "mean_train_reward_last3", "mean_train_cost_last3", "mean_train_cost_rate",
         "mean_pSVR", "mean_hidden_unsafe_rate", "mean_candidate_spread", "mean_speed",
     ]
