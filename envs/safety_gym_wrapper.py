@@ -33,11 +33,12 @@ def get_reward_scale(env_id: str) -> float:
     return 1.0
 
 
-def make_safe_env(env_id: str, train: bool = True):
-    """Create a Safety-Gymnasium env with action rescaling and cost wrapper."""
+def make_safe_env(env_id: str, train: bool = True, binary_cost: bool = True):
+    """Create a Safety-Gymnasium env with action rescaling and optional binary cost."""
     env = safety_gymnasium.make(env_id)
     env = SafeRescaleAction(env, -1.0, 1.0)
-    env = BinaryCostWrapper(env)
+    if binary_cost:
+        env = BinaryCostWrapper(env)
     if train:
         env = RewardScalingWrapper(env, get_reward_scale(env_id))
     return env

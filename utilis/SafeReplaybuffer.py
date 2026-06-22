@@ -5,9 +5,10 @@ import numpy as np
 
 
 class SafeReplayMemory:
-    def __init__(self, capacity, seed):
+    def __init__(self, capacity, seed, recent_fraction=0.2):
         random.seed(seed)
         self.capacity = capacity
+        self.recent_fraction = float(recent_fraction)
         self.buffer = []
         self.position = 0
 
@@ -19,16 +20,28 @@ class SafeReplayMemory:
 
     def sample(self, batch_size):
         buffer_len = len(self.buffer)
-        num_uniform = int(batch_size * 0.8)
-        num_recent = batch_size - num_uniform
+        if self.recent_fraction <= 0.0:
+            return self.sample_uniform(batch_size)
+
+        num_recent = int(round(batch_size * self.recent_fraction))
+        num_recent = min(max(num_recent, 0), batch_size)
+        num_uniform = batch_size - num_recent
+
         uniform_indices = random.sample(range(buffer_len), num_uniform)
 
         recent_window = min(2048, buffer_len)
         if self.position - recent_window >= 0:
             recent_indices_raw = list(range(self.position - recent_window, self.position))
         else:
-            recent_indices_raw = list(range(self.position - recent_window + buffer_len, buffer_len)) + list(range(0, self.position))
-        recent_indices = random.sample(recent_indices_raw, min(num_recent, recent_window))
+            recent_indices_raw = (
+                list(range(self.position - recent_window + buffer_len, buffer_len))
+                + list(range(0, self.position))
+            )
+
+        recent_count = min(num_recent, len(recent_indices_raw))
+        recent_indices = random.sample(recent_indices_raw, recent_count)
+        if recent_count < num_recent:
+            uniform_indices += random.sample(range(buffer_len), num_recent - recent_count)
 
         all_indices = uniform_indices + recent_indices
         batch = [self.buffer[idx] for idx in all_indices]
