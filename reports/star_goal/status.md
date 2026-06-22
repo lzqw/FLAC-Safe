@@ -14,3 +14,9 @@ Updated: 2026-06-22T19:57:27.898328
 - Disk risk: root filesystem had low free space; output results are under /root/autodl-tmp via results symlink
 
 Next: commit/push performance code, then begin actor-audit parameter screening on development tasks/seeds.
+
+## Actor Stage1
+
+- actor_stage1 scheduler launched for 24 runs: 12 configs x 2 dev tasks x seed10.
+- First batch running with 6 concurrent jobs under 3 runs/GPU.
+- Early error scan clean.
