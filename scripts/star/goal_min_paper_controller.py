@@ -68,6 +68,14 @@ def launch_risk_scale_if_needed() -> None:
         write_status("risk_scale_running", "Risk-scale calibration is already running.")
         return
     sh(["python", "scripts/star/goal_risk_scale_calibration.py", "--launch"])
+    sh([
+        "tmux",
+        "new",
+        "-d",
+        "-s",
+        "star_goal_risk_scale_postprocess",
+        "cd /root/FLAC-Safe && source ~/miniconda3/etc/profile.d/conda.sh && conda activate flac && python scripts/star/goal_risk_scale_postprocess.py --poll-seconds 300 2>&1 | tee logs/star_goal/risk_scale_postprocess.log",
+    ])
     write_status("risk_scale_launched", "Stage1 indicated saturated risk scale; launched risk-scale calibration.")
 
 
