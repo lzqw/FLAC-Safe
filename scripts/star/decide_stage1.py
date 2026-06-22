@@ -307,6 +307,18 @@ def maybe_write_selected(report_dir: Path, candidates: list[dict], saturated: bo
     (report_dir / "selected_actor_config.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
+def maybe_write_thresholds(report_dir: Path, saturated: bool, t_mid: float, t_high: float) -> None:
+    if math.isnan(t_mid) or math.isnan(t_high):
+        return
+    data = {
+        "pSVR_rho_active_saturated": bool(saturated),
+        "T_mid": t_mid,
+        "T_high": t_high,
+        "threshold_grid": str(report_dir / "shadow_threshold_grid.csv"),
+    }
+    (report_dir / "stage1_decision_thresholds.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report-dir", type=Path, default=REPORT)
@@ -328,6 +340,7 @@ def main() -> None:
     ]
     write_csv(args.report_dir / "stage1_candidates.csv", candidates, fields)
     write_markdown(args.report_dir, candidates, saturated, note, t_mid, t_high)
+    maybe_write_thresholds(args.report_dir, saturated, t_mid, t_high)
     maybe_write_selected(args.report_dir, candidates, saturated)
     print(f"wrote {args.report_dir / 'stage1_candidates.csv'}")
     print(f"wrote {args.report_dir / 'stage1_decision.md'}")
