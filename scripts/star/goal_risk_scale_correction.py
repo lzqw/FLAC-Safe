@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
+import shutil
 import shlex
 import socket
 import subprocess
@@ -14,6 +16,8 @@ from pathlib import Path
 
 REPORT = Path("reports/star_goal")
 LOG_ROOT = Path("logs/star_goal/risk_scale_correction")
+CORRECTION_REPORT = REPORT / "risk_scale_correction"
+CONFIG_DIR = Path("configs")
 TASKS = ["SafetyPointGoal1-v0", "SafetyCarGoal1-v0"]
 SEED = 10
 STEPS = 100000
@@ -239,6 +243,120 @@ def print_status() -> None:
         print(f"{status:10s} {job['config']:16s} {job['task']} seed={job['seed']} threshold={job['threshold']:.2f} gamma={job['cost_gamma']:.2f}")
 
 
+def all_complete() -> bool:
+    jobs = all_jobs()
+    return all(is_complete(job) for job in jobs) and not any(has_error(job) for job in jobs)
+
+
+def sh(cmd: list[str]) -> None:
+    print("+ " + " ".join(shlex.quote(part) for part in cmd), flush=True)
+    subprocess.check_call(cmd)
+
+
+def write_selected_markdown(selected_path: Path) -> None:
+    selected_report = REPORT / "selected_actor_config.md"
+    if not selected_path.exists():
+        selected_report.write_text(
+            "# Selected STAR Actor Config\n\n"
+            "No valid risk-scale correction actor configuration has been selected yet.\n"
+        )
+        return
+    data = json.loads(selected_path.read_text())
+    lines = [
+        "# Selected STAR Actor Config",
+        "",
+        "Selected from the directed risk-scale correction stage.",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+    ]
+    for key in [
+        "selected_config",
+        "cost_gamma",
+        "star_risk_threshold",
+        "star_lambda",
+        "shadow_k",
+        "shadow_temperature",
+        "shadow_aggregation",
+        "shadow_reference_mode",
+        "star_ref_update_interval",
+        "star_kl_coef",
+        "star_kl_target",
+        "cost_critic_reduce",
+        "star_exec_candidates",
+        "star_exec_margin",
+    ]:
+        lines.append(f"| {key} | `{data.get(key, '')}` |")
+    selected_report.write_text("\n".join(lines) + "\n")
+
+
+def collect() -> None:
+    root = Path(result_root())
+    REPORT.mkdir(parents=True, exist_ok=True)
+    CORRECTION_REPORT.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    for stale in [
+        REPORT / "selected_actor_config.json",
+        REPORT / "selected_actor_config.md",
+        CONFIG_DIR / "star_selected_actor.json",
+    ]:
+        if stale.exists():
+            stale.unlink()
+
+    completed = sum(is_complete(job) for job in all_jobs())
+    failed = sum(has_error(job) for job in all_jobs())
+    total = len(all_jobs())
+    if completed < total or failed:
+        print(f"warning: collecting partial correction results completed={completed}/{total} failed={failed}", flush=True)
+
+    sh([
+        "python",
+        "scripts/star/collect_risk_scale_results.py",
+        "--root",
+        str(root),
+        "--report-dir",
+        str(CORRECTION_REPORT),
+    ])
+
+    runs = CORRECTION_REPORT / "risk_scale_runs.csv"
+    candidates = CORRECTION_REPORT / "risk_scale_candidates.csv"
+    selection = CORRECTION_REPORT / "risk_scale_selection.md"
+    if runs.exists():
+        shutil.copyfile(runs, REPORT / "risk_scale_correction_summary.csv")
+    if candidates.exists():
+        shutil.copyfile(candidates, REPORT / "risk_scale_correction_candidates.csv")
+    if selection.exists():
+        shutil.copyfile(selection, REPORT / "risk_scale_correction_selection.md")
+
+    selected_path = REPORT / "selected_actor_config.json"
+    if selected_path.exists():
+        selected = json.loads(selected_path.read_text())
+        selected["selected_from_stage"] = "risk_scale_correction"
+        selected_path.write_text(json.dumps(selected, indent=2, sort_keys=True) + "\n")
+        config_path = CONFIG_DIR / "star_selected_actor.json"
+        config_path.write_text(json.dumps(selected, indent=2, sort_keys=True) + "\n")
+        write_selected_markdown(config_path)
+        print(f"wrote {config_path}")
+    else:
+        write_selected_markdown(selected_path)
+
+    status_lines = [
+        "# Risk-Scale Correction Status",
+        "",
+        f"- Updated: {datetime.now().isoformat()}",
+        f"- Completed: {completed}/{total}",
+        f"- Failed: {failed}",
+        f"- Result root: `{root}`",
+        f"- Summary: `{REPORT / 'risk_scale_correction_summary.csv'}`",
+        f"- Selection: `{REPORT / 'risk_scale_correction_selection.md'}`",
+    ]
+    if selected_path.exists():
+        status_lines.append(f"- Selected actor config: `{CONFIG_DIR / 'star_selected_actor.json'}`")
+    else:
+        status_lines.append("- Selected actor config: not selected")
+    (REPORT / "risk_scale_correction_status.md").write_text("\n".join(status_lines) + "\n")
+
+
 def launch() -> None:
     session = "star_goal_risk_correction_scheduler"
     if session in tmux_sessions():
@@ -251,19 +369,33 @@ def launch() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["plan", "launch", "status", "scheduler-loop"])
+    parser.add_argument("command", nargs="?", choices=["plan", "launch", "status", "scheduler-loop", "collect"])
+    parser.add_argument("--status", action="store_true", help="Compatibility alias for: status")
+    parser.add_argument("--collect", action="store_true", help="Compatibility alias for: collect")
+    parser.add_argument("--scheduler-loop", action="store_true", help="Compatibility alias for: scheduler-loop")
     parser.add_argument("--poll", type=int, default=30)
     args = parser.parse_args()
-    if args.command == "plan":
+    command = args.command
+    if args.status:
+        command = "status"
+    if args.collect:
+        command = "collect"
+    if args.scheduler_loop:
+        command = "scheduler-loop"
+    if command is None:
+        parser.error("one command is required")
+    if command == "plan":
         print(f"result_root={result_root()}")
         for job in all_jobs():
             print(f"{job['config']} {job['task']} seed={job['seed']} threshold={job['threshold']:.2f} gamma={job['cost_gamma']:.2f} run={run_name(job)}")
-    elif args.command == "launch":
+    elif command == "launch":
         launch()
-    elif args.command == "status":
+    elif command == "status":
         print_status()
-    elif args.command == "scheduler-loop":
+    elif command == "scheduler-loop":
         scheduler_loop(args.poll)
+    elif command == "collect":
+        collect()
 
 
 if __name__ == "__main__":
