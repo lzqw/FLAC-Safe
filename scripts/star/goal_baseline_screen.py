@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import shlex
 import socket
 import subprocess
@@ -20,6 +21,7 @@ STEPS = 100000
 MAX_TOTAL_RUNS = 6
 RUNS_PER_GPU = 3
 GPU_IDS = [0, 1]
+SELECTED_ACTOR_CONFIG = Path("configs/star_selected_actor.json")
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,15 @@ def tmux_sessions() -> set[str]:
     if proc.returncode != 0:
         return set()
     return {line.split(":", 1)[0] for line in proc.stdout.splitlines()}
+
+
+def selected_actor_config() -> dict:
+    if not SELECTED_ACTOR_CONFIG.exists():
+        raise SystemExit(
+            f"missing {SELECTED_ACTOR_CONFIG}; run risk-scale correction selection before baseline screen"
+        )
+    with SELECTED_ACTOR_CONFIG.open() as f:
+        return json.load(f)
 
 
 def all_jobs() -> list[dict]:
@@ -114,6 +125,7 @@ def assigned_gpu(running_counts: dict[int, int]) -> int:
 
 
 def command_for(job: dict, gpu: int) -> str:
+    selected = selected_actor_config()
     args = [
         "python", "main_star.py",
         "--task", job["task"],
@@ -128,13 +140,16 @@ def command_for(job: dict, gpu: int) -> str:
         "--batch_size", "256",
         "--hidden_size", "256",
         "--updates_per_step", "1",
-        "--shadow_k", "16",
-        "--shadow_temperature", "0.05",
-        "--shadow_aggregation", "log_mean_exp",
-        "--shadow_reference_mode", "corridor",
-        "--star_risk_threshold", "0.10",
-        "--cost_gamma", "0.99",
-        "--cost_critic_reduce", "max",
+        "--shadow_k", str(selected.get("shadow_k", 16)),
+        "--shadow_temperature", str(selected.get("shadow_temperature", 0.05)),
+        "--shadow_aggregation", str(selected.get("shadow_aggregation", "log_mean_exp")),
+        "--shadow_reference_mode", str(selected.get("shadow_reference_mode", "corridor")),
+        "--star_risk_threshold", str(selected.get("star_risk_threshold", 0.10)),
+        "--cost_gamma", str(selected.get("cost_gamma", 0.99)),
+        "--cost_critic_reduce", str(selected.get("cost_critic_reduce", "max")),
+        "--star_ref_update_interval", str(selected.get("star_ref_update_interval", 20)),
+        "--star_kl_coef", str(selected.get("star_kl_coef", 1.0)),
+        "--star_kl_target", str(selected.get("star_kl_target", 0.01)),
         "--recent_fraction", "0.0",
         "--binary_cost", "True",
         "--eval", "False",
@@ -236,6 +251,14 @@ def launch() -> None:
 
 
 def status() -> None:
+    if SELECTED_ACTOR_CONFIG.exists():
+        selected = selected_actor_config()
+        print(
+            "Selected actor config: "
+            f"{selected.get('selected_config')} "
+            f"threshold={selected.get('star_risk_threshold')} "
+            f"cost_gamma={selected.get('cost_gamma')}"
+        )
     print("Baseline screen sessions:")
     for session in sorted(s for s in tmux_sessions() if s.startswith("star_goal_baseline_screen")):
         print(f"  {session}")

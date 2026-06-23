@@ -196,7 +196,17 @@ def select(rows: list[dict]) -> tuple[dict | None, list[dict]]:
             "decision": "candidate" if not reasons else "filtered",
             "reasons": ";".join(sorted(set(reasons))),
         })
-    candidates = sorted(candidates, key=lambda row: (row["decision"] != "candidate", -to_float(row["score"], -1e9), row["config"]))
+    # The goal-mode selection contract intentionally prioritizes safety over
+    # the scalar score: lower raw cost first, then higher return, then a
+    # stronger audit gap, with cost_gamma=0.97 preferred only when comparable.
+    candidates = sorted(candidates, key=lambda row: (
+        row["decision"] != "candidate",
+        to_float(row["mean_cost"], 1e9),
+        -to_float(row["mean_return"], -1e9),
+        -to_float(row["mean_audit_gap"], -1e9),
+        0 if abs(to_float(row["cost_gamma"], 0.0) - 0.97) < 1e-9 else 1,
+        row["config"],
+    ))
     selected = next((row for row in candidates if row["decision"] == "candidate"), None)
     return selected, candidates
 
@@ -216,6 +226,8 @@ def write_selected(report_dir: Path, selected: dict | None) -> None:
         "star_kl_coef": 1.0,
         "star_kl_target": 0.01,
         "cost_critic_reduce": "max",
+        "star_exec_candidates": 16,
+        "star_exec_margin": 0.02,
         "selected_from_stage": "risk_scale_calibration",
         "selected_config": selected["config"],
     }

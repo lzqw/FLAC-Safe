@@ -1,0 +1,5 @@
+config,cost_gamma,star_risk_threshold,tasks,mean_return,mean_cost,mean_rho_active_rate,mean_audit_gap,score,decision,reasons
+cg095_thr0p50,0.95,0.5,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",25.88566480332952,34.75,0.16349999999999998,0.01602634696662426,23.82769115029614,candidate,
+cg097_thr0p55,0.97,0.55,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",28.13522343931782,51.25,0.21999999999999997,0.013320115938782691,25.3060435552566,candidate,
+cg095_thr0p45,0.95,0.45,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",25.750359769956926,52.95,0.1555,0.01435924927890301,22.77271901923583,candidate,
+cg097_thr0p60,0.97,0.6,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",26.069783923495283,67.5,0.2455,0.014649309605360032,22.454933233100643,candidate,
