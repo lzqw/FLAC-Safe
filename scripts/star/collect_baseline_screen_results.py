@@ -12,6 +12,7 @@ from statistics import mean
 
 
 REPORT = Path("reports/star_goal")
+CONFIG_DIR = Path("configs")
 ERROR_RE = re.compile(
     r"No space left|Traceback|RuntimeError|OOM|out of memory|CUDA error|Segmentation fault|KeyboardInterrupt|invalid loss",
     re.IGNORECASE,
@@ -260,6 +261,42 @@ def write_markdown(report_dir: Path, rows: list[dict], selected_pointwise: dict 
     (report_dir / "baseline_screen_selection.md").write_text("\n".join(lines) + "\n")
 
 
+def write_selected_baselines(report_dir: Path, selected: dict, selected_pointwise: dict | None, selected_lag: dict | None) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    if selected_pointwise and selected_lag:
+        text = json.dumps(selected, indent=2, sort_keys=True) + "\n"
+        (report_dir / "selected_baseline_config.json").write_text(text)
+        (CONFIG_DIR / "star_selected_baselines.json").write_text(text)
+    lines = [
+        "# Selected Baselines",
+        "",
+        "Selected from the 100k baseline screen using final-checkpoint raw reevaluation.",
+        "",
+        "| Method | Config | Parameter | Return | Cost | EVR | Train Cost Rate |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    if selected_pointwise:
+        lines.append(
+            f"| Pointwise | `{selected_pointwise['config']}` | "
+            f"`star_lambda={selected.get('pointwise_star_lambda')}` | "
+            f"{fmt(selected_pointwise.get('mean_return'))} | {fmt(selected_pointwise.get('mean_cost'))} | "
+            f"{fmt(selected_pointwise.get('mean_evr'))} | {fmt(selected_pointwise.get('mean_train_cost_rate'), 4)} |"
+        )
+    else:
+        lines.append("| Pointwise | not selected |  |  |  |  |  |")
+    if selected_lag:
+        lines.append(
+            f"| SAC-Lag-local | `{selected_lag['config']}` | "
+            f"`lagrange_lr={selected.get('sac_lag_lagrange_lr')}` | "
+            f"{fmt(selected_lag.get('mean_return'))} | {fmt(selected_lag.get('mean_cost'))} | "
+            f"{fmt(selected_lag.get('mean_evr'))} | {fmt(selected_lag.get('mean_train_cost_rate'), 4)} |"
+        )
+    else:
+        lines.append("| SAC-Lag-local | not selected |  |  |  |  |  |")
+    (report_dir / "selected_baselines.md").write_text("\n".join(lines) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=None)
@@ -293,8 +330,7 @@ def main() -> None:
         selected["sac_lag_lagrange_lr"] = config_value_from_name(selected_lag["config"])
         selected["sac_lag_config"] = selected_lag["config"]
     selected["source_root"] = str(root)
-    if selected_pointwise and selected_lag:
-        (args.report_dir / "selected_baseline_config.json").write_text(json.dumps(selected, indent=2, sort_keys=True) + "\n")
+    write_selected_baselines(args.report_dir, selected, selected_pointwise, selected_lag)
     print(f"wrote {args.report_dir / 'baseline_screen_runs.csv'}")
     print(f"wrote {args.report_dir / 'baseline_screen_candidates.csv'}")
     print(f"wrote {args.report_dir / 'baseline_screen_selection.md'}")

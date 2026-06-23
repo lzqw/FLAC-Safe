@@ -1,0 +1,7 @@
+method,config,tasks,usable_runs,mean_return,mean_cost,mean_evr,mean_train_cost_rate,score,decision,reasons
+pointwise,pointwise_lambda050,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",2,27.07328623451318,48.4,0.0484,0.05788,24.653286234513182,candidate,
+pointwise,pointwise_lambda100,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",2,21.43158917009292,103.69999999999999,0.1037,0.067505,16.24658917009292,filtered,SafetyPointGoal1-v0:cost_exploded
+pointwise,pointwise_lambda200,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",2,10.648642270881854,49.95,0.049949999999999994,0.059625,8.151142270881854,filtered,SafetyPointGoal1-v0:return_collapse
+sac_lag,sac_lag_lr0003,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",2,28.15965674852216,38.0,0.038,0.07377500000000001,26.25965674852216,candidate,
+sac_lag,sac_lag_lr0001,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",2,28.49409703752439,45.3,0.0453,0.06260500000000001,26.22909703752439,candidate,
+sac_lag,sac_lag_lr0010,"SafetyCarGoal1-v0,SafetyPointGoal1-v0",2,27.13787037693259,43.1,0.0431,0.054580000000000004,24.98287037693259,candidate,
