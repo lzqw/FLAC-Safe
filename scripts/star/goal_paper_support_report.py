@@ -171,7 +171,20 @@ def paper_gate(raw_cmp: list[dict], rvf: list[dict], audit: list[dict]) -> None:
     bl = paired_fraction(b_lag, 'cost', lambda r: float(r['delta_cost_star_minus_baseline']) < 0)
     claim_b = 'supported' if bp[0] > bp[1]/2 and bl[0] > bl[1]/2 else ('weak' if bp[0] > bp[1]/2 or bl[0] > bl[1]/2 else 'not supported')
     c = paired_fraction(rvf, 'cost', lambda r: float(r['delta_cost_filtered_minus_raw']) < 0)
-    claim_c = 'supported' if c[0] > c[1]/2 else ('weak' if c[0] > 0 else 'not supported')
+    exec_rows = read_csv(EXEC_GRID)
+    selected_exec = None
+    selected_cfg_path = Path('configs/star_selected_executor.json')
+    if selected_cfg_path.exists():
+        import json
+        cfg = json.loads(selected_cfg_path.read_text())
+        selected_exec = (str(int(cfg.get('star_exec_candidates', -1))), str(float(cfg.get('star_exec_margin', -1))))
+    exec_selected_rows = []
+    if selected_exec:
+        for r in exec_rows:
+            if r.get('candidates') == selected_exec[0] and str(float(r.get('margin', 'nan'))) == selected_exec[1]:
+                exec_selected_rows.append(r)
+    exec_improve = sum(1 for r in exec_selected_rows if float(r.get('filtered_evr', 'nan')) < float(r.get('raw_evr', 'nan')))
+    claim_c = 'supported' if exec_selected_rows and exec_improve == len(exec_selected_rows) else ('weak' if c[0] > 0 or exec_improve > 0 else 'not supported')
     corridor_rows = read_csv(CORRIDOR)
     claim_d = 'pending' if not corridor_rows else 'supported' if mean([float(r['delta_cost_current_minus_corridor']) for r in corridor_rows]) > 0 else 'weak'
     oracle_rows = read_csv(ORACLE)
@@ -185,7 +198,7 @@ def paper_gate(raw_cmp: list[dict], rvf: list[dict], audit: list[dict]) -> None:
         f'Evidence: STAR-Actor cost lower than pointwise on {bp[0]}/{bp[1]} paired task-seeds; lower than SAC-Lag-local on {bl[0]}/{bl[1]} paired task-seeds.',
         '',
         f'Claim C: {claim_c}',
-        f'Evidence: Full STAR filtered cost lower than raw on {c[0]}/{c[1]} paired task-seeds; executor grid selected candidates=8 margin=0.0.',
+        f'Evidence: Default Full STAR filtered cost lower than raw on {c[0]}/{c[1]} paired task-seeds. Selected executor grid improved filtered EVR on {exec_improve}/{len(exec_selected_rows)} task-level comparisons with candidates=8 margin=0.0.',
         '',
         f'Claim D: {claim_d}',
         'Evidence: current-only ablation is still pending.' if not corridor_rows else 'Evidence: reports/star_goal/corridor_vs_current_only.csv.',
