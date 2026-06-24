@@ -1,0 +1,9 @@
+{
+  "average_filtered_cost": 41.825,
+  "average_filtered_evr": 0.041825,
+  "average_return_drop_frac": 0.008148053257964158,
+  "selection_rule": "min average filtered EVR, then filtered cost, with return_drop<=20% and fallback_rate<0.8",
+  "source": "reports/star_paper_support/executor_grid/executor_grid_summary.csv",
+  "star_exec_candidates": 8,
+  "star_exec_margin": 0.0
+}

@@ -1,0 +1,7 @@
+{
+  "pointwise_config": "pointwise_lambda050",
+  "pointwise_star_lambda": 0.5,
+  "sac_lag_config": "sac_lag_lr0003",
+  "sac_lag_lagrange_lr": 0.0003,
+  "source_root": "results/star_baseline_screen_9717ca4"
+}

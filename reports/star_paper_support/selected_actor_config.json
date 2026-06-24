@@ -1,0 +1,17 @@
+{
+  "cost_critic_reduce": "max",
+  "cost_gamma": 0.95,
+  "selected_config": "cg095_thr0p50",
+  "selected_from_stage": "risk_scale_correction",
+  "shadow_aggregation": "log_mean_exp",
+  "shadow_k": 16,
+  "shadow_reference_mode": "corridor",
+  "shadow_temperature": 0.05,
+  "star_exec_candidates": 16,
+  "star_exec_margin": 0.02,
+  "star_kl_coef": 1.0,
+  "star_kl_target": 0.01,
+  "star_lambda": 1.0,
+  "star_ref_update_interval": 20,
+  "star_risk_threshold": 0.5
+}
