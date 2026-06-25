@@ -138,6 +138,17 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
         "save_interval_steps": 50000 if spec.steps >= 50000 else spec.steps,
         "disable_wandb": True,
     }
+    if spec.phase.startswith("smoke"):
+        params.update(
+            {
+                "start_steps": 200,
+                "batch_size": 64,
+                "hidden_size": 128,
+                "metric_log_interval_steps": 500,
+                "mechanism_log_interval_steps": 500,
+                "audit_diagnostic_interval": 10,
+            }
+        )
     if spec.method == "pointwise_v2":
         params["shadow_reference_mode"] = "corridor"
     if spec.method == "sac_lag":
@@ -156,7 +167,7 @@ def smoke_specs() -> list[RunSpec]:
     specs = []
     for index, (task, method) in enumerate((t, m) for t in tasks for m in methods):
         device = 0 if index < 4 else 1
-        specs.append(RunSpec("smoke5k", task, method, 0, 5000, "star_v2_smoke", device))
+        specs.append(RunSpec("smoke5k_train", task, method, 0, 5000, "star_v2_smoke", device))
     return specs
 
 
