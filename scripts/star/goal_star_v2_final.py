@@ -87,6 +87,11 @@ def load_json(path: str) -> dict:
         return json.load(handle)
 
 
+def flatten_overrides(data: dict) -> tuple[tuple[str, object], ...]:
+    ignored = {"schema", "algorithm_git_sha", "method", "methods", "shared"}
+    return tuple((key, value) for key, value in data.items() if key not in ignored)
+
+
 def write_status(rows: Iterable[dict]) -> None:
     rows = list(rows)
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +263,62 @@ def calibration_baseline_specs() -> list[RunSpec]:
     return specs
 
 
+def final_tasks() -> list[str]:
+    full = load_json("configs/star_v2_selected_full.json")
+    if full.get("selected_final_tasks"):
+        return [str(task) for task in full["selected_final_tasks"]]
+    return [str(task) for task in full.get("preferred_final_tasks", [])]
+
+
+def baseline_method_overrides(method: str) -> tuple[tuple[str, object], ...]:
+    data = load_json("configs/star_v2_selected_baselines.json")
+    shared = dict(data.get("shared", {}))
+    method_cfg = dict(data.get("methods", {}).get(method, {}))
+    merged = {**shared, **method_cfg}
+    return flatten_overrides(merged)
+
+
+def actor_overrides() -> tuple[tuple[str, object], ...]:
+    return flatten_overrides(load_json("configs/star_v2_selected_actor.json"))
+
+
+def core_100k_specs() -> list[RunSpec]:
+    tasks = final_tasks()
+    seeds = [10, 11, 12]
+    methods = ["pointwise_v2", "current_only_v2", "sac_lag", "star_v2"]
+    specs: list[RunSpec] = []
+    index = 0
+    for task in tasks:
+        for method in methods:
+            for seed in seeds:
+                if method == "star_v2":
+                    overrides = actor_overrides()
+                    config_name = "selected_star_v2"
+                else:
+                    overrides = baseline_method_overrides(method)
+                    config_name = f"selected_{method}"
+                specs.append(
+                    RunSpec(
+                        "core_100k",
+                        task,
+                        method,
+                        seed,
+                        100000,
+                        config_name,
+                        index % 2,
+                        overrides=overrides
+                        + (
+                            ("save_interval_steps", 50000),
+                            ("mechanism_log_interval_steps", 5000),
+                            ("metric_log_interval_steps", 5000),
+                            ("audit_diagnostic_interval", 100),
+                        ),
+                    )
+                )
+                index += 1
+    return specs
+
+
 def doctor(args: argparse.Namespace) -> int:
     ensure_dirs()
     print(f"repo={REPO}")
@@ -379,6 +440,10 @@ def calibrate(args: argparse.Namespace) -> int:
     return launch_specs(specs, dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
 
+def core_100k(args: argparse.Namespace) -> int:
+    return launch_specs(core_100k_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
+
+
 def oracle(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
@@ -433,6 +498,9 @@ def main(argv: list[str] | None = None) -> int:
     calibrate_parser.add_argument("--grid", choices=["star", "baseline", "all"], default="all")
     calibrate_parser.add_argument("--dry-run", action="store_true")
     calibrate_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    core_parser = sub.add_parser("core-100k")
+    core_parser.add_argument("--dry-run", action="store_true")
+    core_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     sub.add_parser("status")
     oracle_parser = sub.add_parser("oracle")
     oracle_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
@@ -441,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     oracle_parser.add_argument("--max-states-per-run", type=int, default=200)
     oracle_parser.add_argument("--methods", default="star_v2")
     oracle_parser.add_argument("--dry-run", action="store_true")
-    for name in ["core-100k", "resume-300k", "ablation", "executor", "collect", "paper"]:
+    for name in ["resume-300k", "ablation", "executor", "collect", "paper"]:
         sub.add_parser(name)
     args = parser.parse_args(argv)
     if args.command == "doctor":
@@ -452,6 +520,8 @@ def main(argv: list[str] | None = None) -> int:
         return smoke(args)
     if args.command == "calibrate":
         return calibrate(args)
+    if args.command == "core-100k":
+        return core_100k(args)
     if args.command == "oracle":
         return oracle(args)
     return not_yet(args.command)
