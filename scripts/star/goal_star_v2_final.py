@@ -103,7 +103,9 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
         "task": spec.task,
         "method": spec.method,
         "seed": spec.seed,
-        "device": spec.device,
+        # When CUDA_VISIBLE_DEVICES is set per process, PyTorch sees the assigned
+        # physical GPU as local cuda:0.
+        "device": 0,
         "num_steps": spec.steps,
         "run_name": spec.run_name,
         "output_root": str(RESULT_ROOT / spec.phase),
