@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from model.utils import hard_update
 
 from .sac_base import SACBase
-from .shadow_audit import ShadowAuditModule
+from .shadow_audit import ShadowAuditModule, exceedance_penalty
 
 
 class STARAgent(SACBase):
@@ -20,9 +20,23 @@ class STARAgent(SACBase):
     def __init__(self, num_inputs: int, action_space, config) -> None:
         super().__init__(num_inputs, action_space, config)
         self.method = str(config.method)
-        valid_methods = {"sac", "pointwise", "sac_lag", "star_actor", "star_exec", "star"}
+        valid_methods = {
+            "sac",
+            "pointwise",
+            "sac_lag",
+            "star_actor",
+            "star_exec",
+            "star",
+            "pointwise_v2",
+            "current_only_v2",
+            "star_v2",
+            "star_collect_v2",
+        }
         if self.method not in valid_methods:
             raise ValueError(f"unknown method: {self.method}")
+        self.star_algorithm_version = str(getattr(config, "star_algorithm_version", "star_v1"))
+        if self.star_algorithm_version not in ("star_v1", "star_v2"):
+            raise ValueError(f"unknown star_algorithm_version: {self.star_algorithm_version}")
 
         self.reference_policy = copy.deepcopy(self.policy).to(self.device)
         self.reference_policy.freeze()
@@ -33,6 +47,8 @@ class STARAgent(SACBase):
         self.audit = ShadowAuditModule(
             self.action_dim,
             shadow_k=int(config.shadow_k),
+            shadow_num_strata=int(getattr(config, "shadow_num_strata", config.shadow_k)),
+            shadow_samples_per_stratum=int(getattr(config, "shadow_samples_per_stratum", 1)),
             shadow_aggregation=str(getattr(config, "shadow_aggregation", "log_mean_exp")),
             shadow_temperature=float(config.shadow_temperature),
             shadow_local_std=float(config.shadow_local_std),
@@ -42,6 +58,12 @@ class STARAgent(SACBase):
             cost_critic_reduce=str(getattr(config, "cost_critic_reduce", "max")),
         )
         self.star_lambda = float(config.star_lambda)
+        self.star_shadow_penalty_mode = str(
+            getattr(config, "star_shadow_penalty_mode", getattr(config, "shadow_penalty_mode", "linear"))
+        )
+        if self.star_shadow_penalty_mode not in ("linear", "squared"):
+            raise ValueError(f"unknown star_shadow_penalty_mode: {self.star_shadow_penalty_mode}")
+        self.star_use_kl = bool(getattr(config, "star_use_kl", True))
         self.star_kl_coef = float(config.star_kl_coef)
         self.star_kl_target = float(config.star_kl_target)
         self.star_kl_mode = str(config.star_kl_mode)
@@ -53,15 +75,19 @@ class STARAgent(SACBase):
         self.star_exec_margin = float(config.star_exec_margin)
         self.star_exec_start_steps = int(config.star_exec_start_steps)
         self.boundary_epsilon = float(config.boundary_epsilon)
+        self.audit_diagnostic_interval = int(getattr(config, "audit_diagnostic_interval", 1000))
+        self.training_execution_mode = str(getattr(config, "training_execution_mode", "raw"))
+        self.evaluation_execution_mode = str(getattr(config, "evaluation_execution_mode", "both"))
+        self.allow_star_v1_checkpoint = bool(getattr(config, "allow_star_v1_checkpoint", False))
 
     def _method_uses_shadow_loss(self) -> bool:
-        return self.method in {"star", "star_actor"}
+        return self.method in {"star", "star_actor", "current_only_v2", "star_v2", "star_collect_v2"}
 
     def _method_uses_kl(self) -> bool:
-        return self.method == "star"
+        return self.star_use_kl and self.method in {"star", "pointwise_v2", "current_only_v2", "star_v2", "star_collect_v2"}
 
     def _method_uses_execution(self) -> bool:
-        return self.method in {"star", "star_exec"} and self.star_exec
+        return self.method in {"star", "star_exec", "star_collect_v2", "star_v2"} and self.star_exec
 
     def _reference_update_if_needed(self) -> None:
         if self.star_ref_update_interval <= 0:
@@ -81,21 +107,45 @@ class STARAgent(SACBase):
         q1, q2 = self.reward_critic(state, action)
         return torch.min(q1, q2)
 
+    def _shadow_reference_mode_for_method(self) -> str:
+        if self.method == "current_only_v2":
+            return "current_only"
+        return self.audit.shadow_reference_mode
+
     def _shadow_actor_terms(self, state: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        shadow = self.audit.generate_shadow_actions(self.policy, self.reference_policy, state)
+        reference_mode = self._shadow_reference_mode_for_method()
+        shadow = self.audit.generate_shadow_actions(
+            self.policy,
+            self.reference_policy,
+            state,
+            reference_mode=reference_mode,
+        )
         q_shadow = self.audit.conservative_cost(self.cost_critic, state, shadow.actions)
         self.cost_critic_forward_calls += int(q_shadow.numel())
         rho = self.audit.shadow_risk(q_shadow)
         threshold = self.risk_threshold
-        penalty = F.relu(rho - threshold).mean()
+        penalty, excess = exceedance_penalty(rho, threshold, self.star_shadow_penalty_mode)
         unsafe = (q_shadow > threshold).float()
 
         _, _, mean_action = self.policy.sample(state)
         mean_q = self._cost_plus(state, mean_action).view(-1)
         any_unsafe = unsafe.max(dim=1).values
         hidden = ((mean_q <= threshold) & (any_unsafe > 0)).float()
+        reference_endpoint_risk = torch.zeros((), device=self.device)
+        if shadow.reference_endpoint_action is not None:
+            with torch.no_grad():
+                reference_endpoint_risk = self._cost_plus(state, shadow.reference_endpoint_action).view(-1).mean()
+        if self.audit.shadow_temperature <= 1e-8:
+            weights = torch.zeros_like(q_shadow)
+            weights.scatter_(1, q_shadow.argmax(dim=1, keepdim=True), 1.0)
+        else:
+            weights = torch.softmax((q_shadow / self.audit.shadow_temperature).float(), dim=1).to(q_shadow.dtype)
+        beta_by_action = shadow.beta.gather(1, shadow.stratum_index.unsqueeze(-1)).squeeze(-1)
+        effective_beta = (weights * beta_by_action).sum(dim=1)
+        redteam_entropy = -(weights.clamp_min(1e-12) * weights.clamp_min(1e-12).log()).sum(dim=1)
         stats = {
             "penalty": penalty,
+            "excess": excess,
             "rho": rho,
             "q_shadow": q_shadow,
             "p_svr": unsafe.mean(),
@@ -103,8 +153,30 @@ class STARAgent(SACBase):
             "hidden": hidden.mean(),
             "action_spread": shadow.spread.mean(),
             "actor_mean_action_risk": mean_q.mean(),
+            "reference_endpoint_risk": reference_endpoint_risk,
+            "effective_beta": effective_beta.mean(),
+            "redteam_weight_entropy": redteam_entropy.mean(),
+            "shadow_active_rate": (excess > 0).float().mean(),
+            "shadow_excess_mean": excess.mean(),
+            "shadow_excess_p90": torch.quantile(excess.detach(), 0.9),
+            "shadow_risk_p90": torch.quantile(rho.detach(), 0.9),
         }
         return penalty, stats
+
+    @torch.no_grad()
+    def _paired_audit_diagnostics(self, state: torch.Tensor) -> Dict[str, torch.Tensor]:
+        matched = self.audit.generate_matched_audits(self.policy, self.reference_policy, state)
+        q_corridor = self.audit.conservative_cost(self.cost_critic, state, matched.corridor.actions)
+        q_current = self.audit.conservative_cost(self.cost_critic, state, matched.current_only.actions)
+        rho_corridor = self.audit.shadow_risk(q_corridor)
+        rho_current = self.audit.shadow_risk(q_current)
+        lift = rho_corridor - rho_current
+        return {
+            "paired_corridor_risk": rho_corridor.mean(),
+            "paired_current_risk": rho_current.mean(),
+            "paired_corridor_risk_lift": lift.mean(),
+            "paired_lift_positive_rate": (lift > 0).float().mean(),
+        }
 
     def _kl_terms(self, state: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         kl = self.policy.analytic_kl_to(self.reference_policy, state)
@@ -119,7 +191,8 @@ class STARAgent(SACBase):
 
     def _pointwise_penalty(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         q_cost = self._cost_plus(state, action)
-        return F.relu(q_cost - self.risk_threshold).mean()
+        penalty, _ = exceedance_penalty(q_cost.view(-1), self.risk_threshold, self.star_shadow_penalty_mode)
+        return penalty
 
     def _lagrange_value(self) -> torch.Tensor:
         return F.softplus(self.lagrange_multiplier)
@@ -147,8 +220,10 @@ class STARAgent(SACBase):
             kl_loss = torch.zeros((), device=self.device)
             shadow_stats: Dict[str, torch.Tensor] = {}
             kl_stats: Dict[str, torch.Tensor] = {}
+            paired_stats: Dict[str, torch.Tensor] = {}
+            reference_age_pre = self.reference_age
 
-            if self.method == "pointwise":
+            if self.method in {"pointwise", "pointwise_v2"}:
                 pointwise = self._pointwise_penalty(state, action)
                 actor_loss = actor_loss + self.star_lambda * pointwise
             elif self.method == "sac_lag":
@@ -163,9 +238,21 @@ class STARAgent(SACBase):
                 kl_loss, kl_stats = self._kl_terms(state)
                 actor_loss = actor_loss + self.star_kl_coef * kl_loss
 
+            if (
+                self.audit_diagnostic_interval > 0
+                and self._method_uses_shadow_loss()
+                and self.actor_updates % self.audit_diagnostic_interval == 0
+            ):
+                paired_stats = self._paired_audit_diagnostics(state)
+
             self.policy_optim.zero_grad(set_to_none=True)
             actor_loss.backward()
             cost_grad_leak = any(p.grad is not None for p in self.cost_critic.parameters())
+            actor_grad_sq = torch.zeros((), device=self.device)
+            for parameter in self.policy.parameters():
+                if parameter.grad is not None:
+                    actor_grad_sq = actor_grad_sq + parameter.grad.detach().pow(2).sum()
+            actor_grad_norm = actor_grad_sq.sqrt()
             self.policy_optim.step()
             alpha_loss = self.update_alpha(log_pi)
 
@@ -175,6 +262,7 @@ class STARAgent(SACBase):
             self.actor_updates += 1
             self.reference_age += 1
             self._reference_update_if_needed()
+            reference_age_post = self.reference_age
 
             q_shadow = shadow_stats.get("q_shadow")
             rho = shadow_stats.get("rho")
@@ -189,20 +277,39 @@ class STARAgent(SACBase):
                 "star/kl_max": float(kl.max().detach().item()) if kl is not None else 0.0,
                 "star/kl_exceed_rate": float(kl_stats.get("kl_exceed", torch.zeros((), device=self.device)).detach().item()),
                 "star/reference_age": float(self.reference_age),
+                "star/reference_age_pre_update": float(reference_age_pre),
+                "star/reference_age_post_update": float(reference_age_post),
                 "star/reference_update_count": float(self.reference_update_count),
                 "star/action_spread": float(shadow_stats.get("action_spread", torch.zeros((), device=self.device)).detach().item()),
                 "star/shadow_k": float(self.audit.shadow_k),
+                "star/shadow_num_strata": float(self.audit.shadow_num_strata),
+                "star/shadow_samples_per_stratum": float(self.audit.shadow_samples_per_stratum),
                 "star/shadow_aggregation": self.audit.shadow_aggregation,
                 "star/shadow_temperature": float(self.audit.shadow_temperature),
                 "star/shadow_reference_mode": self.audit.shadow_reference_mode,
+                "star/shadow_beta_mode": self.audit.shadow_beta_mode,
+                "star/shadow_penalty_mode": self.star_shadow_penalty_mode,
+                "star/star_algorithm_version": self.star_algorithm_version,
                 "star/pSVR": float(shadow_stats.get("p_svr", torch.zeros((), device=self.device)).detach().item()),
                 "star/any_unsafe_shadow_rate": float(shadow_stats.get("any_unsafe", torch.zeros((), device=self.device)).detach().item()),
                 "star/hidden_unsafe_rate": float(shadow_stats.get("hidden", torch.zeros((), device=self.device)).detach().item()),
                 "star/shadow_risk_mean": float(rho.mean().detach().item()) if rho is not None else 0.0,
+                "star/shadow_risk_p90": float(shadow_stats.get("shadow_risk_p90", torch.zeros((), device=self.device)).detach().item()),
                 "star/shadow_risk_batch_max": float(rho.max().detach().item()) if rho is not None else 0.0,
                 "star/shadow_risk_max_mean": float(q_shadow.max(dim=1).values.mean().detach().item()) if q_shadow is not None else 0.0,
                 "star/shadow_q_mean": float(q_shadow.mean().detach().item()) if q_shadow is not None else 0.0,
                 "star/shadow_q_std": float(q_shadow.std(unbiased=False).detach().item()) if q_shadow is not None else 0.0,
+                "star/shadow_excess_mean": float(shadow_stats.get("shadow_excess_mean", torch.zeros((), device=self.device)).detach().item()),
+                "star/shadow_excess_p90": float(shadow_stats.get("shadow_excess_p90", torch.zeros((), device=self.device)).detach().item()),
+                "star/shadow_active_rate": float(shadow_stats.get("shadow_active_rate", torch.zeros((), device=self.device)).detach().item()),
+                "star/redteam_weight_entropy": float(shadow_stats.get("redteam_weight_entropy", torch.zeros((), device=self.device)).detach().item()),
+                "star/effective_beta": float(shadow_stats.get("effective_beta", torch.zeros((), device=self.device)).detach().item()),
+                "star/reference_endpoint_risk": float(shadow_stats.get("reference_endpoint_risk", torch.zeros((), device=self.device)).detach().item()),
+                "star/paired_corridor_risk": float(paired_stats.get("paired_corridor_risk", torch.zeros((), device=self.device)).detach().item()),
+                "star/paired_current_risk": float(paired_stats.get("paired_current_risk", torch.zeros((), device=self.device)).detach().item()),
+                "star/paired_corridor_risk_lift": float(paired_stats.get("paired_corridor_risk_lift", torch.zeros((), device=self.device)).detach().item()),
+                "star/paired_lift_positive_rate": float(paired_stats.get("paired_lift_positive_rate", torch.zeros((), device=self.device)).detach().item()),
+                "star/actor_gradient_norm": float(actor_grad_norm.detach().item()),
                 "star/actor_mean_action_risk": float(shadow_stats.get("actor_mean_action_risk", torch.zeros((), device=self.device)).detach().item()),
                 "star/cost_grad_leak": float(cost_grad_leak),
                 "star/pointwise_penalty": float(pointwise.detach().item()),
@@ -375,6 +482,11 @@ class STARAgent(SACBase):
                 "reference_age": self.reference_age,
                 "reference_update_count": self.reference_update_count,
                 "method": self.method,
+                "star_algorithm_version": self.star_algorithm_version,
+                "shadow_beta_mode": self.audit.shadow_beta_mode,
+                "shadow_penalty_mode": self.star_shadow_penalty_mode,
+                "shadow_num_strata": self.audit.shadow_num_strata,
+                "shadow_samples_per_stratum": self.audit.shadow_samples_per_stratum,
             }
         )
         torch.save(state, path)
@@ -383,6 +495,12 @@ class STARAgent(SACBase):
 
     def load_checkpoint(self, path: str) -> None:
         state = torch.load(path, map_location=self.device)
+        ckpt_version = str(state.get("star_algorithm_version", "star_v1"))
+        if ckpt_version != self.star_algorithm_version:
+            message = f"loading {ckpt_version} checkpoint into {self.star_algorithm_version} agent"
+            if ckpt_version == "star_v1" and self.star_algorithm_version == "star_v2" and not self.allow_star_v1_checkpoint:
+                raise ValueError(f"{message}; set allow_star_v1_checkpoint=True to override")
+            print(f"WARNING: {message}", flush=True)
         self.load_checkpoint_state(state)
         self.reference_policy.load_state_dict(state["reference_policy"])
         self.reference_policy.freeze()

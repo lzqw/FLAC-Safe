@@ -108,9 +108,31 @@ MECHANISM_FIELDS = [
     "lagrange_value",
     "lagrange_mean_qc",
     "shadow_k",
+    "shadow_num_strata",
+    "shadow_samples_per_stratum",
     "shadow_temperature",
     "shadow_aggregation",
     "shadow_reference_mode",
+    "shadow_beta_mode",
+    "shadow_penalty_mode",
+    "star_algorithm_version",
+    "shadow_excess_mean",
+    "shadow_excess_p90",
+    "shadow_active_rate",
+    "shadow_risk_p90",
+    "effective_beta",
+    "reference_endpoint_risk",
+    "reference_age_pre_update",
+    "reference_age_post_update",
+    "reference_update_count",
+    "reference_kl_mean",
+    "reference_kl_max",
+    "paired_corridor_risk",
+    "paired_current_risk",
+    "paired_corridor_risk_lift",
+    "paired_lift_positive_rate",
+    "redteam_weight_entropy",
+    "actor_gradient_norm",
     "safe_candidate_fraction",
     "fallback_rate",
     "executed_predicted_risk",
@@ -163,7 +185,10 @@ def make_env(task, *, safe_env=False, train=True, binary_cost=True):
 
 
 def execution_mode_for_config(config) -> str:
-    return "star_exec" if bool(config.star_exec) and config.method in ("star", "star_exec") else "raw"
+    training_mode = str(getattr(config, "training_execution_mode", "raw"))
+    if training_mode == "star_exec" and bool(config.star_exec) and config.method in ("star", "star_exec", "star_collect_v2"):
+        return "star_exec"
+    return "raw"
 
 
 def _success(info: dict) -> float:
@@ -483,9 +508,31 @@ def mechanism_row(run_name: str, config, step: int, update: int, log: dict, inte
         "lagrange_value": log.get("star/lagrange_value", 0.0),
         "lagrange_mean_qc": log.get("star/lagrange_mean_qc", 0.0),
         "shadow_k": log.get("star/shadow_k", getattr(config, "shadow_k", 0)),
+        "shadow_num_strata": log.get("star/shadow_num_strata", getattr(config, "shadow_num_strata", getattr(config, "shadow_k", 0))),
+        "shadow_samples_per_stratum": log.get("star/shadow_samples_per_stratum", getattr(config, "shadow_samples_per_stratum", 1)),
         "shadow_temperature": log.get("star/shadow_temperature", getattr(config, "shadow_temperature", 0)),
         "shadow_aggregation": log.get("star/shadow_aggregation", getattr(config, "shadow_aggregation", "")),
         "shadow_reference_mode": log.get("star/shadow_reference_mode", getattr(config, "shadow_reference_mode", "")),
+        "shadow_beta_mode": log.get("star/shadow_beta_mode", getattr(config, "shadow_beta_mode", "")),
+        "shadow_penalty_mode": log.get("star/shadow_penalty_mode", getattr(config, "star_shadow_penalty_mode", "")),
+        "star_algorithm_version": log.get("star/star_algorithm_version", getattr(config, "star_algorithm_version", "")),
+        "shadow_excess_mean": log.get("star/shadow_excess_mean", 0.0),
+        "shadow_excess_p90": log.get("star/shadow_excess_p90", 0.0),
+        "shadow_active_rate": log.get("star/shadow_active_rate", 0.0),
+        "shadow_risk_p90": log.get("star/shadow_risk_p90", 0.0),
+        "effective_beta": log.get("star/effective_beta", 0.0),
+        "reference_endpoint_risk": log.get("star/reference_endpoint_risk", 0.0),
+        "reference_age_pre_update": log.get("star/reference_age_pre_update", 0.0),
+        "reference_age_post_update": log.get("star/reference_age_post_update", 0.0),
+        "reference_update_count": log.get("star/reference_update_count", 0.0),
+        "reference_kl_mean": log.get("star/kl_mean", 0.0),
+        "reference_kl_max": log.get("star/kl_max", 0.0),
+        "paired_corridor_risk": log.get("star/paired_corridor_risk", 0.0),
+        "paired_current_risk": log.get("star/paired_current_risk", 0.0),
+        "paired_corridor_risk_lift": log.get("star/paired_corridor_risk_lift", 0.0),
+        "paired_lift_positive_rate": log.get("star/paired_lift_positive_rate", 0.0),
+        "redteam_weight_entropy": log.get("star/redteam_weight_entropy", 0.0),
+        "actor_gradient_norm": log.get("star/actor_gradient_norm", 0.0),
         "safe_candidate_fraction": interaction.get("star/execution_safe_candidate_fraction", 0.0),
         "fallback_rate": interaction.get("star/execution_fallback_rate", 0.0),
         "executed_predicted_risk": interaction.get("star/executed_predicted_risk", 0.0),
@@ -515,7 +562,12 @@ def train_loop(config) -> None:
         f.write(str(config))
     with (run_dir / "run_metadata.json").open("w") as f:
         metadata = serializable_config(config)
-        metadata.update({"run_name": run_name, "run_dir": str(run_dir), "start_time": datetime.datetime.now().isoformat()})
+        metadata.update({
+            "run_name": run_name,
+            "run_dir": str(run_dir),
+            "start_time": datetime.datetime.now().isoformat(),
+            "git_sha": os.popen("git rev-parse HEAD 2>/dev/null").read().strip(),
+        })
         json.dump(metadata, f, indent=2, sort_keys=True)
 
     memory = SafeReplayMemory(config.replay_size, config.seed, recent_fraction=config.recent_fraction)
@@ -544,7 +596,8 @@ def train_loop(config) -> None:
     print(
         "STAR_CONFIG method={} run_name={} run_dir={} eval_interval_steps={} eval_times={} "
         "save_interval_steps={} recent_fraction={} shadow_aggregation={} shadow_reference_mode={} "
-            "cost_critic_reduce={}".format(
+            "cost_critic_reduce={} star_algorithm_version={} shadow_beta_mode={} shadow_penalty_mode={} "
+            "shadow_num_strata={} shadow_samples_per_stratum={} training_execution_mode={}".format(
             config.method,
             run_name,
             run_dir,
@@ -555,6 +608,12 @@ def train_loop(config) -> None:
             config.shadow_aggregation,
             config.shadow_reference_mode,
             config.cost_critic_reduce,
+            getattr(config, "star_algorithm_version", ""),
+            getattr(config, "shadow_beta_mode", ""),
+            getattr(config, "star_shadow_penalty_mode", getattr(config, "shadow_penalty_mode", "")),
+            getattr(config, "shadow_num_strata", getattr(config, "shadow_k", 0)),
+            getattr(config, "shadow_samples_per_stratum", 1),
+            getattr(config, "training_execution_mode", "raw"),
         ),
         flush=True,
     )

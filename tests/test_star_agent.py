@@ -19,6 +19,8 @@ def make_config(**kwargs):
     cfg.hidden_size = 32
     cfg.batch_size = 16
     cfg.shadow_k = 4
+    cfg.shadow_num_strata = 4
+    cfg.shadow_samples_per_stratum = 1
     cfg.star_exec_candidates = 4
     cfg.replay_size = 256
     cfg.normalize_obs = False
@@ -76,6 +78,83 @@ def test_shadow_loss_gives_actor_gradient_but_not_cost_critic_gradient():
     assert actor_grad > 0.0
     assert all(p.grad is None for p in agent.cost_critic.parameters())
     assert all(p.grad is None for p in agent.reference_policy.parameters())
+
+
+def test_star_v2_all_positive_strata_have_actor_gradient_path():
+    torch.manual_seed(6)
+    obs_space, action_space = make_spaces()
+    cfg = make_config(
+        method="star_v2",
+        star_algorithm_version="star_v2",
+        shadow_beta_mode="positive_linspace",
+        star_shadow_penalty_mode="squared",
+        star_risk_threshold=-10.0,
+    )
+    agent = STARAgent(obs_space.shape[0], action_space, cfg)
+    agent.cost_critic = ParamCostCritic(action_space.shape[0])
+    state = torch.randn(8, obs_space.shape[0])
+
+    shadow = agent.audit.generate_shadow_actions(agent.policy, agent.reference_policy, state)
+    assert torch.all(shadow.beta > 0)
+    assert torch.isclose(shadow.beta[0, -1, 0], torch.tensor(1.0))
+
+    flags = agent.set_requires_grad(agent.cost_critic, False)
+    try:
+        loss, _ = agent._shadow_actor_terms(state)
+        agent.policy_optim.zero_grad(set_to_none=True)
+        loss.backward()
+    finally:
+        agent.restore_requires_grad(agent.cost_critic, flags)
+
+    actor_grad = sum(
+        float(p.grad.detach().abs().sum())
+        for p in agent.policy.parameters()
+        if p.grad is not None
+    )
+    assert actor_grad > 0.0
+    assert all(p.grad is None for p in agent.cost_critic.parameters())
+
+
+def test_cost_critic_action_input_gradient_nonzero():
+    torch.manual_seed(7)
+    obs_space, action_space = make_spaces()
+    agent = STARAgent(obs_space.shape[0], action_space, make_config(method="star_v2", star_algorithm_version="star_v2"))
+    agent.cost_critic = ParamCostCritic(action_space.shape[0])
+    state = torch.randn(4, obs_space.shape[0])
+    action = torch.randn(4, action_space.shape[0], requires_grad=True)
+    q = agent._cost_plus(state, action).sum()
+    grad = torch.autograd.grad(q, action, retain_graph=False)[0]
+    assert float(grad.abs().sum()) > 0.0
+
+
+def test_after_reference_refresh_corridor_and_current_only_match_with_same_noise():
+    torch.manual_seed(8)
+    obs_space, action_space = make_spaces()
+    cfg = make_config(
+        method="star_v2",
+        star_algorithm_version="star_v2",
+        shadow_beta_mode="positive_linspace",
+        star_ref_update_interval=1,
+    )
+    agent = STARAgent(obs_space.shape[0], action_space, cfg)
+    state = torch.randn(5, obs_space.shape[0])
+    hard_state = agent.policy.state_dict()
+    agent.reference_policy.load_state_dict(hard_state)
+    agent.reference_policy.freeze()
+    matched = agent.audit.generate_matched_audits(agent.policy, agent.reference_policy, state)
+    assert torch.allclose(matched.corridor.actions, matched.current_only.actions, atol=1e-6)
+
+
+def test_current_only_v2_and_star_v2_have_same_candidate_count():
+    torch.manual_seed(9)
+    obs_space, action_space = make_spaces()
+    base = dict(star_algorithm_version="star_v2", shadow_num_strata=4, shadow_samples_per_stratum=3)
+    star = STARAgent(obs_space.shape[0], action_space, make_config(method="star_v2", **base))
+    current = STARAgent(obs_space.shape[0], action_space, make_config(method="current_only_v2", **base))
+    state = torch.randn(6, obs_space.shape[0])
+    star_batch = star.audit.generate_shadow_actions(star.policy, star.reference_policy, state, reference_mode="corridor")
+    current_batch = current.audit.generate_shadow_actions(current.policy, current.reference_policy, state, reference_mode="current_only")
+    assert star_batch.actions.shape[1] == current_batch.actions.shape[1] == 12
 
 
 def test_executor_selects_best_safe_candidate():
@@ -161,6 +240,48 @@ def test_checkpoint_save_load_restores_training_state(tmp_path):
         assert torch.allclose(p1, p2)
     assert torch.allclose(agent.obs_rms.mean, restored.obs_rms.mean)
     assert torch.allclose(agent.log_alpha, restored.log_alpha)
+
+
+def test_star_v2_checkpoint_preserves_algorithm_metadata(tmp_path):
+    torch.manual_seed(10)
+    obs_space, action_space = make_spaces()
+    cfg = make_config(
+        method="star_v2",
+        star_algorithm_version="star_v2",
+        shadow_beta_mode="positive_linspace",
+        star_shadow_penalty_mode="squared",
+        shadow_num_strata=3,
+        shadow_samples_per_stratum=2,
+        normalize_obs=False,
+    )
+    agent = STARAgent(obs_space.shape[0], action_space, cfg)
+    agent.reference_age = 4
+    path = agent.save_checkpoint(str(tmp_path), suffix="star_v2_ckpt")
+    state = torch.load(path, map_location="cpu")
+    assert state["star_algorithm_version"] == "star_v2"
+    assert state["shadow_beta_mode"] == "positive_linspace"
+    assert state["shadow_penalty_mode"] == "squared"
+    assert state["shadow_num_strata"] == 3
+    assert state["shadow_samples_per_stratum"] == 2
+
+    restored = STARAgent(obs_space.shape[0], action_space, cfg)
+    restored.load_checkpoint(path)
+    assert restored.reference_age == 4
+
+
+def test_loading_star_v1_checkpoint_as_v2_requires_override(tmp_path):
+    torch.manual_seed(11)
+    obs_space, action_space = make_spaces()
+    v1 = STARAgent(obs_space.shape[0], action_space, make_config(method="star", normalize_obs=False))
+    path = v1.save_checkpoint(str(tmp_path), suffix="star_v1_ckpt")
+    v2_cfg = make_config(method="star_v2", star_algorithm_version="star_v2", normalize_obs=False)
+    v2 = STARAgent(obs_space.shape[0], action_space, v2_cfg)
+    try:
+        v2.load_checkpoint(path)
+    except ValueError as exc:
+        assert "allow_star_v1_checkpoint" in str(exc)
+    else:
+        raise AssertionError("STAR-v1 checkpoint loaded as STAR-v2 without explicit override")
 
 
 def test_lambda_zero_kl_zero_exec_false_degenerates_to_sac_actor_update():
