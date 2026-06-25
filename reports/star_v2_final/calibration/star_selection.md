@@ -1,7 +1,7 @@
 # STAR-v2 calibration selection
 
 STAR runs completed: 16/16
-Baseline screen runs completed: 2/8
+Baseline screen runs completed: 8/8
 
 Selection: starC_thr050_lam10
 

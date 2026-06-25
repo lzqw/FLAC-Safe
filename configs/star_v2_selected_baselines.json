@@ -1,6 +1,6 @@
 {
   "schema": "star_v2_selected_baselines",
-  "algorithm_git_sha": "pending",
+  "algorithm_git_sha": "662acdc4fb7ea4d095815c36372838365f35546c",
   "shared": {
     "star_algorithm_version": "star_v2",
     "cost_gamma": 0.95,
@@ -16,7 +16,9 @@
   },
   "methods": {
     "pointwise_v2": {
-      "method": "pointwise_v2"
+      "method": "pointwise_v2",
+      "selected_calibration_name": "pointwise_lam10",
+      "star_lambda": 1.0
     },
     "current_only_v2": {
       "method": "current_only_v2",
@@ -28,7 +30,9 @@
     },
     "sac_lag": {
       "method": "sac_lag",
-      "lagrange_lr": 0.0003
+      "lagrange_lr": 0.001,
+      "selected_calibration_name": "saclag_lr1e3"
     }
-  }
+  },
+  "selection_source": "reports/star_v2_final/calibration/baseline_selection.md"
 }
