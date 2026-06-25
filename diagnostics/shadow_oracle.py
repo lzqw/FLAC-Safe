@@ -165,15 +165,57 @@ def _risk(agent, state, action) -> float:
 
 
 @torch.no_grad()
-def _highest_risk_shadow_action(agent, state, k: Optional[int] = None) -> tuple[np.ndarray, float]:
+def _highest_risk_shadow_action(
+    agent,
+    state,
+    k: Optional[int] = None,
+    *,
+    reference_mode: str = "corridor",
+) -> tuple[np.ndarray, float, float]:
     state_tensor = _state_tensor(agent, state)
     count = int(k or max(getattr(agent.audit, "shadow_k", 1), getattr(agent, "star_exec_candidates", 1)))
-    shadow = agent.audit.generate_shadow_actions(agent.policy, agent.reference_policy, state_tensor, k=count)
+    shadow = agent.audit.generate_shadow_actions(
+        agent.policy,
+        agent.reference_policy,
+        state_tensor,
+        k=count,
+        reference_mode=reference_mode,
+    )
     q_shadow = agent.audit.conservative_cost(agent.cost_critic, state_tensor, shadow.actions).view(-1)
     index = int(torch.argmax(q_shadow).item())
     action = shadow.actions.view(count, -1)[index].detach().cpu().numpy()
     action = np.clip(action, agent.action_space.low, agent.action_space.high)
-    return action, float(q_shadow[index].detach().cpu().item())
+    beta = float(shadow.beta.view(-1)[min(index, shadow.beta.numel() - 1)].detach().cpu().item())
+    return action, float(q_shadow[index].detach().cpu().item()), beta
+
+
+@torch.no_grad()
+def _highest_risk_matched_actions(agent, state) -> Dict[str, Any]:
+    """Return highest-risk current-only and corridor actions with shared noises."""
+
+    state_tensor = _state_tensor(agent, state)
+    matched = agent.audit.generate_matched_audits(agent.policy, agent.reference_policy, state_tensor)
+
+    q_corridor = agent.audit.conservative_cost(agent.cost_critic, state_tensor, matched.corridor.actions).view(-1)
+    q_current = agent.audit.conservative_cost(agent.cost_critic, state_tensor, matched.current_only.actions).view(-1)
+
+    corridor_index = int(torch.argmax(q_corridor).item())
+    current_index = int(torch.argmax(q_current).item())
+    corridor_action = matched.corridor.actions.view(q_corridor.numel(), -1)[corridor_index].detach().cpu().numpy()
+    current_action = matched.current_only.actions.view(q_current.numel(), -1)[current_index].detach().cpu().numpy()
+    corridor_action = np.clip(corridor_action, agent.action_space.low, agent.action_space.high)
+    current_action = np.clip(current_action, agent.action_space.low, agent.action_space.high)
+    beta = float(matched.corridor.beta.view(-1)[min(corridor_index, matched.corridor.beta.numel() - 1)].detach().cpu().item())
+    corridor_risk = float(q_corridor[corridor_index].detach().cpu().item())
+    current_risk = float(q_current[current_index].detach().cpu().item())
+    return {
+        "corridor_action": corridor_action,
+        "corridor_predicted_risk": corridor_risk,
+        "corridor_beta": beta,
+        "current_only_action": current_action,
+        "current_only_predicted_risk": current_risk,
+        "corridor_risk_lift": corridor_risk - current_risk,
+    }
 
 
 def _executed_candidate_action(agent, state, total_numsteps: Optional[int]) -> tuple[np.ndarray, float]:
@@ -241,19 +283,36 @@ def shadow_oracle_step(
     try:
         mean_action = _mean_action(agent, state)
         executed_action, executed_predicted_risk = _executed_candidate_action(agent, state, total_numsteps)
-        shadow_action, shadow_predicted_risk = _highest_risk_shadow_action(agent, state, k=shadow_k)
+        if shadow_k is None:
+            matched = _highest_risk_matched_actions(agent, state)
+        else:
+            corridor_action, corridor_predicted_risk, corridor_beta = _highest_risk_shadow_action(
+                agent, state, k=shadow_k, reference_mode="corridor"
+            )
+            current_action, current_predicted_risk, _ = _highest_risk_shadow_action(
+                agent, state, k=shadow_k, reference_mode="current_only"
+            )
+            matched = {
+                "corridor_action": corridor_action,
+                "corridor_predicted_risk": corridor_predicted_risk,
+                "corridor_beta": corridor_beta,
+                "current_only_action": current_action,
+                "current_only_predicted_risk": current_predicted_risk,
+                "corridor_risk_lift": corridor_predicted_risk - current_predicted_risk,
+            }
         mean_predicted_risk = _risk(agent, state, mean_action)
 
         mean_violation, mean_cost = _rollout_actual_cost(agent, env, snapshot, mean_action, horizon)
         executed_violation, executed_cost = _rollout_actual_cost(agent, env, snapshot, executed_action, horizon)
-        shadow_violation, shadow_cost = _rollout_actual_cost(agent, env, snapshot, shadow_action, horizon)
+        current_violation, current_cost = _rollout_actual_cost(agent, env, snapshot, matched["current_only_action"], horizon)
+        shadow_violation, shadow_cost = _rollout_actual_cost(agent, env, snapshot, matched["corridor_action"], horizon)
     finally:
         restore_snapshot(snapshot)
         agent.last_action_info = previous_info
 
     unsafe_found_but_not_deployed = (
-        shadow_predicted_risk > threshold
-        and not np.allclose(shadow_action, executed_action)
+        matched["corridor_predicted_risk"] > threshold
+        and not np.allclose(matched["corridor_action"], executed_action)
         and executed_violation <= 0
     )
 
@@ -264,14 +323,21 @@ def shadow_oracle_step(
         "horizon": int(horizon),
         "mean_predicted_risk": mean_predicted_risk,
         "executed_predicted_risk": executed_predicted_risk,
-        "shadow_predicted_risk": shadow_predicted_risk,
+        "current_only_predicted_risk": matched["current_only_predicted_risk"],
+        "corridor_predicted_risk": matched["corridor_predicted_risk"],
+        "shadow_predicted_risk": matched["corridor_predicted_risk"],
+        "corridor_beta": matched["corridor_beta"],
+        "corridor_risk_lift": matched["corridor_risk_lift"],
         "mean_actual_cost": mean_cost,
         "executed_actual_cost": executed_cost,
+        "current_only_actual_cost": current_cost,
         "shadow_actual_cost": shadow_cost,
         "mean_violation": mean_violation,
         "executed_violation": executed_violation,
+        "current_only_violation": current_violation,
         "shadow_violation": shadow_violation,
-        "shadow_predicted_unsafe": float(shadow_predicted_risk > threshold),
+        "current_only_predicted_unsafe": float(matched["current_only_predicted_risk"] > threshold),
+        "shadow_predicted_unsafe": float(matched["corridor_predicted_risk"] > threshold),
         "executed_predicted_unsafe": float(executed_predicted_risk > threshold),
         "unsafe_found_but_not_deployed": float(unsafe_found_but_not_deployed),
     }
@@ -334,10 +400,17 @@ class ShadowOracleAccumulator:
             "oracle_samples": len(self.rows),
             "oracle_shadow_violation_rate": float(np.mean(labels)),
             "oracle_executed_violation_rate": float(np.mean([float(row["executed_violation"]) for row in self.rows])),
+            "oracle_current_only_violation_rate": float(
+                np.mean([float(row.get("current_only_violation", float("nan"))) for row in self.rows])
+            ),
             "shadow_risk_precision": tp / max(1.0, tp + fp),
             "shadow_risk_recall": tp / max(1.0, tp + fn),
             "shadow_risk_AUROC": _auroc(scores, labels),
             "predicted_vs_actual_shadow_cost": _pearson(scores, [float(row["shadow_actual_cost"]) for row in self.rows]),
+            "corridor_minus_current_violation": float(
+                np.mean([float(row["shadow_violation"]) - float(row.get("current_only_violation", 0.0)) for row in self.rows])
+            ),
+            "corridor_risk_lift_mean": float(np.mean([float(row.get("corridor_risk_lift", float("nan"))) for row in self.rows])),
             "unsafe_found_but_not_deployed_rate": float(
                 np.mean([float(row["unsafe_found_but_not_deployed"]) for row in self.rows])
             ),

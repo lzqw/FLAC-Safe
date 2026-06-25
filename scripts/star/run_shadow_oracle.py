@@ -33,13 +33,20 @@ ROW_FIELDS = [
     "unsupported_reason",
     "mean_predicted_risk",
     "executed_predicted_risk",
+    "current_only_predicted_risk",
+    "corridor_predicted_risk",
     "shadow_predicted_risk",
+    "corridor_beta",
+    "corridor_risk_lift",
     "mean_actual_cost",
     "executed_actual_cost",
+    "current_only_actual_cost",
     "shadow_actual_cost",
     "mean_violation",
     "executed_violation",
+    "current_only_violation",
     "shadow_violation",
+    "current_only_predicted_unsafe",
     "shadow_predicted_unsafe",
     "executed_predicted_unsafe",
     "unsafe_found_but_not_deployed",
@@ -55,8 +62,11 @@ SUMMARY_FIELDS = [
     "unsupported_reason",
     "oracle_samples",
     "oracle_shadow_violation_rate",
+    "oracle_current_only_violation_rate",
     "oracle_mean_violation_rate",
     "oracle_executed_violation_rate",
+    "corridor_minus_current_violation",
+    "corridor_risk_lift_mean",
     "shadow_minus_mean_violation",
     "shadow_risk_precision",
     "shadow_risk_recall",
@@ -72,6 +82,10 @@ def parse_seed_list(value: str) -> list[int]:
 
 def parse_int_list(value: str) -> list[int]:
     return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def parse_str_list(value: str) -> set[str]:
+    return {item.strip() for item in value.split(",") if item.strip()}
 
 
 def read_meta(run_dir: Path) -> dict:
@@ -108,9 +122,19 @@ def advance_raw(agent: STARAgent, env, state, config):
     return next_state, bool(terminated or truncated)
 
 
-def run_checkpoint(run_dir: Path, report_dir: Path, eval_seeds: list[int], horizons: list[int], max_states: int) -> None:
+def run_checkpoint(
+    run_dir: Path,
+    report_dir: Path,
+    eval_seeds: list[int],
+    horizons: list[int],
+    max_states: int,
+    methods: set[str],
+) -> None:
     meta = read_meta(run_dir)
-    if meta.get("method") != "star_actor":
+    method = str(meta.get("method", ""))
+    if method not in methods:
+        return
+    if str(meta.get("star_algorithm_version", "")) not in {"star_v2", ""}:
         return
     checkpoint = final_checkpoint(run_dir)
     if checkpoint is None:
@@ -142,9 +166,8 @@ def run_checkpoint(run_dir: Path, report_dir: Path, eval_seeds: list[int], horiz
     try:
         agent = STARAgent(env.observation_space.shape[0], env.action_space, config)
         agent.load_checkpoint(str(checkpoint))
-        # Force candidate executor for STAR-Actor checkpoints only during
-        # evaluation-only oracle probing.
-        agent.method = "star"
+        # Force candidate executor only during evaluation-only oracle probing.
+        agent.method = method
         agent.star_exec = True
         per_horizon_rows = {h: [] for h in horizons}
         sample_index = 0
@@ -186,13 +209,18 @@ def run_checkpoint(run_dir: Path, report_dir: Path, eval_seeds: list[int], horiz
             summary = acc.summary()
             mean_v = [float(row["mean_violation"]) for row in rows if row.get("supported")]
             shadow_v = [float(row["shadow_violation"]) for row in rows if row.get("supported")]
+            current_v = [float(row.get("current_only_violation", math.nan)) for row in rows if row.get("supported")]
             summary_row = dict(base)
             summary_row.update({
                 "horizon": horizon,
                 "supported": bool(rows),
                 "unsupported_reason": "",
                 "oracle_mean_violation_rate": mean(mean_v) if mean_v else math.nan,
+                "oracle_current_only_violation_rate": mean(current_v) if current_v else math.nan,
                 "shadow_minus_mean_violation": (mean(shadow_v) - mean(mean_v)) if shadow_v and mean_v else math.nan,
+                "corridor_minus_current_violation": (
+                    mean(shadow_v) - mean(current_v)
+                ) if shadow_v and current_v else math.nan,
                 "predicted_actual_cost_correlation": summary.get("predicted_vs_actual_shadow_cost", math.nan),
             })
             summary_row.update(summary)
@@ -209,6 +237,7 @@ def main() -> None:
     parser.add_argument("--horizons", default="1,5")
     parser.add_argument("--max-states-per-run", type=int, default=200)
     parser.add_argument("--report-dir", type=Path, default=Path("reports/star_goal"))
+    parser.add_argument("--methods", default="star_v2")
     args = parser.parse_args()
     out_dir = args.report_dir / "oracle"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -222,6 +251,7 @@ def main() -> None:
             parse_seed_list(args.eval_seeds),
             parse_int_list(args.horizons),
             args.max_states_per_run,
+            parse_str_list(args.methods),
         )
     print(f"wrote {out_dir / 'oracle_rows.csv'}")
     print(f"wrote {out_dir / 'oracle_summary.csv'}")

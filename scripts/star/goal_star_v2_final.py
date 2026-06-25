@@ -379,6 +379,43 @@ def calibrate(args: argparse.Namespace) -> int:
     return launch_specs(specs, dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
 
+def oracle(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    cmd = [
+        "python",
+        "scripts/star/run_shadow_oracle.py",
+        "--root",
+        str(args.root),
+        "--report-dir",
+        str(REPORT_ROOT),
+        "--eval-seeds",
+        str(args.eval_seeds),
+        "--horizons",
+        str(args.horizons),
+        "--max-states-per-run",
+        str(args.max_states_per_run),
+        "--methods",
+        str(args.methods),
+    ]
+    print(" ".join(shlex.quote(part) for part in cmd))
+    if args.dry_run:
+        return 0
+    proc = subprocess.run(cmd, cwd=REPO)
+    status_path = REPORT_ROOT / "oracle" / "oracle_status.md"
+    rows = []
+    summary_path = REPORT_ROOT / "oracle" / "oracle_summary.csv"
+    if summary_path.exists():
+        rows.append(f"- summary: `{summary_path}`")
+    rows.append(f"- root: `{args.root}`")
+    rows.append(f"- methods: `{args.methods}`")
+    rows.append(f"- eval_seeds: `{args.eval_seeds}`")
+    rows.append(f"- horizons: `{args.horizons}`")
+    rows.append(f"- exit_code: `{proc.returncode}`")
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    status_path.write_text("# STAR-v2 Oracle Status\n\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    return int(proc.returncode)
+
+
 def not_yet(command: str) -> int:
     ensure_dirs()
     print(f"{command}: not implemented yet in this scaffold. Complete prior gates before using this phase.")
@@ -397,7 +434,14 @@ def main(argv: list[str] | None = None) -> int:
     calibrate_parser.add_argument("--dry-run", action="store_true")
     calibrate_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     sub.add_parser("status")
-    for name in ["core-100k", "resume-300k", "oracle", "ablation", "executor", "collect", "paper"]:
+    oracle_parser = sub.add_parser("oracle")
+    oracle_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
+    oracle_parser.add_argument("--eval-seeds", default="900000,900001,900002,900003,900004")
+    oracle_parser.add_argument("--horizons", default="1,5")
+    oracle_parser.add_argument("--max-states-per-run", type=int, default=200)
+    oracle_parser.add_argument("--methods", default="star_v2")
+    oracle_parser.add_argument("--dry-run", action="store_true")
+    for name in ["core-100k", "resume-300k", "ablation", "executor", "collect", "paper"]:
         sub.add_parser(name)
     args = parser.parse_args(argv)
     if args.command == "doctor":
@@ -408,6 +452,8 @@ def main(argv: list[str] | None = None) -> int:
         return smoke(args)
     if args.command == "calibrate":
         return calibrate(args)
+    if args.command == "oracle":
+        return oracle(args)
     return not_yet(args.command)
 
 
