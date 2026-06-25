@@ -533,6 +533,28 @@ def collect(args: argparse.Namespace) -> int:
     return int(subprocess.run(cmd, cwd=REPO).returncode)
 
 
+def eval_core(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    cmd = [
+        "python",
+        "scripts/star/reevaluate_checkpoints.py",
+        "--root",
+        str(RESULT_ROOT / "core_100k"),
+        "--eval-seeds",
+        str(args.eval_seeds),
+        "--checkpoint-selector",
+        "final",
+        "--modes",
+        "raw",
+    ]
+    if args.overwrite_derived:
+        cmd.append("--overwrite-derived")
+    print(" ".join(shlex.quote(part) for part in cmd))
+    if args.dry_run:
+        return 0
+    return int(subprocess.run(cmd, cwd=REPO).returncode)
+
+
 def not_yet(command: str) -> int:
     ensure_dirs()
     print(f"{command}: not implemented yet in this scaffold. Complete prior gates before using this phase.")
@@ -568,6 +590,13 @@ def main(argv: list[str] | None = None) -> int:
     collect_parser.add_argument("--phase", choices=["core_100k", "resume_300k", "all"], default="all")
     collect_parser.add_argument("--strict", action="store_true")
     collect_parser.add_argument("--dry-run", action="store_true")
+    eval_core_parser = sub.add_parser("eval-core")
+    eval_core_parser.add_argument(
+        "--eval-seeds",
+        default="500000,500001,500002,500003,500004,500005,500006,500007,500008,500009",
+    )
+    eval_core_parser.add_argument("--overwrite-derived", action="store_true")
+    eval_core_parser.add_argument("--dry-run", action="store_true")
     for name in ["ablation", "executor", "paper"]:
         sub.add_parser(name)
     args = parser.parse_args(argv)
@@ -587,6 +616,8 @@ def main(argv: list[str] | None = None) -> int:
         return oracle(args)
     if args.command == "collect":
         return collect(args)
+    if args.command == "eval-core":
+        return eval_core(args)
     return not_yet(args.command)
 
 
