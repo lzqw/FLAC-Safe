@@ -139,10 +139,72 @@ def select_star(rows: list[dict]) -> tuple[str | None, str]:
     )
 
 
+def select_baseline_method(rows: list[dict], method: str) -> tuple[str | None, str]:
+    complete = [r for r in rows if r["completed"] and r["method"] == method and r["star_algorithm_version"] == "star_v2"]
+    tasks = sorted({r["task"] for r in complete})
+    configs = sorted({r["ablation_name"] for r in complete})
+    if len(tasks) < 2 or not configs or len(complete) < len(tasks) * len(configs):
+        return None, f"{method} calibration incomplete: {len(complete)} completed rows."
+    by_config_task: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for row in complete:
+        by_config_task[(row["ablation_name"], row["task"])].append(row)
+    best_return_by_task = {
+        task: max(mean([r["avg_last10_reward"] for r in by_config_task[(cfg, task)]]) for cfg in configs)
+        for task in tasks
+    }
+    candidates = []
+    fallback = []
+    for cfg in configs:
+        task_reward_ok = True
+        task_costs = []
+        total_costs = []
+        task_returns = []
+        for task in tasks:
+            cfg_rows = by_config_task[(cfg, task)]
+            r_mean = mean([r["avg_last10_reward"] for r in cfg_rows])
+            c_mean = mean([r["avg_last10_cost"] for r in cfg_rows])
+            task_returns.append(r_mean)
+            task_costs.append(c_mean)
+            total_costs.extend([r["train_total_cost"] for r in cfg_rows])
+            if r_mean < 0.85 * best_return_by_task[task]:
+                task_reward_ok = False
+        item = (mean(task_costs), mean(total_costs), cfg, mean(task_returns))
+        fallback.append(item)
+        if task_reward_ok:
+            candidates.append(item)
+    pool = candidates or fallback
+    pool.sort()
+    selected = pool[0][2]
+    if candidates:
+        return selected, f"Selected {selected} for {method}: lowest development cost with 85% per-task return retention."
+    return selected, f"Selected {selected} for {method}: no config met 85% return retention, using lowest development cost fallback."
+
+
+def update_baseline_config(path: Path, selected: dict[str, str], source_sha: str) -> None:
+    if not path.exists():
+        return
+    data = json.loads(path.read_text())
+    data["algorithm_git_sha"] = source_sha
+    data["selection_source"] = "reports/star_v2_final/calibration/baseline_selection.md"
+    methods = data.setdefault("methods", {})
+    pointwise = selected.get("pointwise_v2")
+    if pointwise:
+        methods.setdefault("pointwise_v2", {})["method"] = "pointwise_v2"
+        methods["pointwise_v2"]["selected_calibration_name"] = pointwise
+        methods["pointwise_v2"]["star_lambda"] = 1.0 if "lam10" in pointwise else 0.5
+    sac_lag = selected.get("sac_lag")
+    if sac_lag:
+        methods.setdefault("sac_lag", {})["method"] = "sac_lag"
+        methods["sac_lag"]["selected_calibration_name"] = sac_lag
+        methods["sac_lag"]["lagrange_lr"] = 1e-3 if "lr1e3" in sac_lag else 3e-4
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="results/star_v2_final")
     parser.add_argument("--report-dir", default="reports/star_v2_final/calibration")
+    parser.add_argument("--update-config", action="store_true")
     args = parser.parse_args()
     root = Path(args.root)
     report = Path(args.report_dir)
@@ -166,11 +228,28 @@ def main() -> int:
         "Selection uses avg_last10_reward/cost from training episodes. Offline evaluation remains required before the 100k core gate.",
     ]
     (report / "star_selection.md").write_text("\n".join(lines) + "\n")
-    (report / "baseline_selection.md").write_text(
-        "# Baseline calibration\n\n"
-        f"Baseline screen runs completed: {sum(1 for r in baseline_rows if r['completed'])}/8\n"
-        "Selection remains pending until all baseline screen runs complete.\n"
-    )
+    baseline_completed = sum(1 for r in baseline_rows if r["completed"])
+    selected_baselines: dict[str, str] = {}
+    baseline_lines = [
+        "# Baseline calibration",
+        "",
+        f"Baseline screen runs completed: {baseline_completed}/8",
+        "",
+    ]
+    if baseline_completed >= 8:
+        for method in ("pointwise_v2", "sac_lag"):
+            choice, reason = select_baseline_method(baseline_rows, method)
+            baseline_lines.extend([f"## {method}", "", f"Selection: {choice or 'PENDING'}", "", reason, ""])
+            if choice:
+                selected_baselines[method] = choice
+        if args.update_config and selected_baselines:
+            import subprocess
+
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+            update_baseline_config(Path("configs/star_v2_selected_baselines.json"), selected_baselines, sha)
+    else:
+        baseline_lines.append("Selection remains pending until all baseline screen runs complete.")
+    (report / "baseline_selection.md").write_text("\n".join(baseline_lines) + "\n")
     print(f"wrote {report / 'star_calibration.csv'} rows={len(star_rows)}")
     print(f"wrote {report / 'baseline_calibration.csv'} rows={len(baseline_rows)}")
     print(f"selected={selected or 'PENDING'}")
