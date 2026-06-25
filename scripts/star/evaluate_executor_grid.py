@@ -70,6 +70,10 @@ def parse_float_list(value: str) -> list[float]:
     return [float(item.strip()) for item in value.split(",") if item.strip()]
 
 
+def parse_str_list(value: str) -> set[str]:
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
 def read_meta(run_dir: Path) -> dict:
     path = run_dir / "run_metadata.json"
     return json.loads(path.read_text()) if path.exists() else {}
@@ -139,14 +143,21 @@ def eval_episode(agent: STARAgent, env, config, seed: int, mode: str) -> dict:
     }
 
 
-def run_grid(root: Path, report_dir: Path, eval_seeds: list[int], candidates_list: list[int], margins: list[float]) -> None:
+def run_grid(
+    root: Path,
+    report_dir: Path,
+    eval_seeds: list[int],
+    candidates_list: list[int],
+    margins: list[float],
+    methods: set[str],
+) -> None:
     out_path = report_dir / "executor_grid.csv"
     if out_path.exists():
         out_path.unlink()
     for meta_path in sorted(root.rglob("run_metadata.json")):
         run_dir = meta_path.parent
         meta = read_meta(run_dir)
-        if meta.get("method") != "star_actor":
+        if meta.get("method") not in methods:
             continue
         checkpoint = final_checkpoint(run_dir)
         if checkpoint is None:
@@ -234,9 +245,17 @@ def main() -> None:
     parser.add_argument("--eval-seeds", default="200000,200001,200002,200003,200004,200005,200006,200007,200008,200009,200010,200011,200012,200013,200014,200015,200016,200017,200018,200019")
     parser.add_argument("--candidates", default="8,16")
     parser.add_argument("--margins", default="0.00,0.02,0.05")
+    parser.add_argument("--methods", default="star_v2,star_collect_v2")
     parser.add_argument("--report-dir", type=Path, default=Path("reports/star_goal"))
     args = parser.parse_args()
-    run_grid(args.root, args.report_dir, parse_seed_list(args.eval_seeds), parse_int_list(args.candidates), parse_float_list(args.margins))
+    run_grid(
+        args.root,
+        args.report_dir,
+        parse_seed_list(args.eval_seeds),
+        parse_int_list(args.candidates),
+        parse_float_list(args.margins),
+        parse_str_list(args.methods),
+    )
     summarize(args.report_dir)
     print(f"wrote {args.report_dir / 'executor_grid.csv'}")
     print(f"wrote {args.report_dir / 'executor_grid_summary.csv'}")

@@ -88,7 +88,15 @@ def load_json(path: str) -> dict:
 
 
 def flatten_overrides(data: dict) -> tuple[tuple[str, object], ...]:
-    ignored = {"schema", "algorithm_git_sha", "method", "methods", "shared"}
+    ignored = {
+        "schema",
+        "algorithm_git_sha",
+        "method",
+        "methods",
+        "shared",
+        "selection_source",
+        "selected_calibration_name",
+    }
     return tuple((key, value) for key, value in data.items() if key not in ignored)
 
 
@@ -283,6 +291,12 @@ def actor_overrides() -> tuple[tuple[str, object], ...]:
     return flatten_overrides(load_json("configs/star_v2_selected_actor.json"))
 
 
+def development_tasks() -> list[str]:
+    full = load_json("configs/star_v2_selected_full.json")
+    tasks = full.get("development_tasks") or final_tasks()[:2]
+    return [str(task) for task in tasks]
+
+
 def core_100k_specs() -> list[RunSpec]:
     tasks = final_tasks()
     seeds = [10, 11, 12]
@@ -342,6 +356,79 @@ def resume_300k_specs() -> list[RunSpec]:
                 ),
             )
         )
+    return specs
+
+
+def ablation_specs() -> list[RunSpec]:
+    """STAR-v2 design ablations on development tasks.
+
+    This intentionally uses a compact one-seed, 100k screen. The variants cover
+    the paper-critical design dimensions; only variants that pass this screen
+    should be expanded later.
+    """
+
+    tasks = development_tasks()
+    seeds = [20]
+    base = dict(actor_overrides())
+    configs: list[tuple[str, tuple[tuple[str, object], ...]]] = [
+        ("agg_mean", (("shadow_aggregation", "mean"),)),
+        ("agg_log_mean_exp", (("shadow_aggregation", "log_mean_exp"),)),
+        ("agg_max", (("shadow_aggregation", "max"),)),
+        ("k1", (("shadow_num_strata", 1), ("shadow_samples_per_stratum", 1))),
+        ("k4", (("shadow_num_strata", 4), ("shadow_samples_per_stratum", 1))),
+        ("k8", (("shadow_num_strata", 8), ("shadow_samples_per_stratum", 1))),
+        ("k16", (("shadow_num_strata", 16), ("shadow_samples_per_stratum", 1))),
+        ("k32", (("shadow_num_strata", 32), ("shadow_samples_per_stratum", 1))),
+        ("current_only", (("shadow_reference_mode", "current_only"),)),
+        ("corridor", (("shadow_reference_mode", "corridor"),)),
+        ("ref_interval5", (("star_ref_update_interval", 5),)),
+        ("ref_interval20", (("star_ref_update_interval", 20),)),
+        ("ref_interval100", (("star_ref_update_interval", 100),)),
+        ("kl_off", (("star_use_kl", False), ("star_kl_coef", 0.0))),
+        ("kl_on", (("star_use_kl", True), ("star_kl_coef", base.get("star_kl_coef", 1.0))),
+        ),
+        ("actor_audit_only", (("method", "star_v2"), ("star_exec", False), ("training_execution_mode", "raw"))),
+        ("candidate_execution_only", (("method", "star_collect_v2"), ("star_lambda", 0.0), ("star_exec", True))),
+        ("full_star", (("method", "star_v2"),)),
+        ("mean_twin_cost", (("cost_critic_reduce", "mean"),)),
+        ("max_twin_cost", (("cost_critic_reduce", "max"),)),
+        ("temp001", (("shadow_temperature", 0.01),)),
+        ("temp003", (("shadow_temperature", 0.03),)),
+        ("temp005", (("shadow_temperature", 0.05),)),
+        ("temp010", (("shadow_temperature", 0.10),)),
+        ("margin000", (("star_exec_margin", 0.0),)),
+        ("margin001", (("star_exec_margin", 0.01),)),
+        ("margin002", (("star_exec_margin", 0.02),)),
+        ("margin005", (("star_exec_margin", 0.05),)),
+    ]
+    specs: list[RunSpec] = []
+    index = 0
+    for task in tasks:
+        for seed in seeds:
+            for config_name, overrides in configs:
+                method = str(dict(overrides).get("method", "star_v2"))
+                merged = actor_overrides() + overrides
+                specs.append(
+                    RunSpec(
+                        "ablation_100k",
+                        task,
+                        method,
+                        seed,
+                        100000,
+                        config_name,
+                        index % 2,
+                        overrides=merged
+                        + (
+                            ("ablation_group", "ablation_100k"),
+                            ("ablation_name", config_name),
+                            ("save_interval_steps", 50000),
+                            ("mechanism_log_interval_steps", 5000),
+                            ("metric_log_interval_steps", 5000),
+                            ("audit_diagnostic_interval", 100),
+                        ),
+                    )
+                )
+                index += 1
     return specs
 
 
@@ -555,6 +642,48 @@ def eval_core(args: argparse.Namespace) -> int:
     return int(subprocess.run(cmd, cwd=REPO).returncode)
 
 
+def ablation(args: argparse.Namespace) -> int:
+    return launch_specs(ablation_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
+
+
+def executor(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    cmd = [
+        "python",
+        "scripts/star/evaluate_executor_grid.py",
+        "--root",
+        str(args.root),
+        "--eval-seeds",
+        str(args.eval_seeds),
+        "--candidates",
+        str(args.candidates),
+        "--margins",
+        str(args.margins),
+        "--methods",
+        str(args.methods),
+        "--report-dir",
+        str(REPORT_ROOT / "executor"),
+    ]
+    print(" ".join(shlex.quote(part) for part in cmd))
+    if args.dry_run:
+        return 0
+    return int(subprocess.run(cmd, cwd=REPO).returncode)
+
+
+def paper(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    cmd = [
+        "python",
+        "scripts/star/build_star_v2_paper_artifacts.py",
+        "--report-dir",
+        str(REPORT_ROOT),
+    ]
+    print(" ".join(shlex.quote(part) for part in cmd))
+    if args.dry_run:
+        return 0
+    return int(subprocess.run(cmd, cwd=REPO).returncode)
+
+
 def not_yet(command: str) -> int:
     ensure_dirs()
     print(f"{command}: not implemented yet in this scaffold. Complete prior gates before using this phase.")
@@ -597,8 +726,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     eval_core_parser.add_argument("--overwrite-derived", action="store_true")
     eval_core_parser.add_argument("--dry-run", action="store_true")
-    for name in ["ablation", "executor", "paper"]:
-        sub.add_parser(name)
+    ablation_parser = sub.add_parser("ablation")
+    ablation_parser.add_argument("--dry-run", action="store_true")
+    ablation_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    executor_parser = sub.add_parser("executor")
+    executor_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
+    executor_parser.add_argument("--eval-seeds", default="700000,700001,700002,700003,700004,700005,700006,700007,700008,700009")
+    executor_parser.add_argument("--candidates", default="8,16")
+    executor_parser.add_argument("--margins", default="0.00,0.02,0.05")
+    executor_parser.add_argument("--methods", default="star_v2,star_collect_v2")
+    executor_parser.add_argument("--dry-run", action="store_true")
+    paper_parser = sub.add_parser("paper")
+    paper_parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return doctor(args)
@@ -618,6 +757,12 @@ def main(argv: list[str] | None = None) -> int:
         return collect(args)
     if args.command == "eval-core":
         return eval_core(args)
+    if args.command == "ablation":
+        return ablation(args)
+    if args.command == "executor":
+        return executor(args)
+    if args.command == "paper":
+        return paper(args)
     return not_yet(args.command)
 
 
