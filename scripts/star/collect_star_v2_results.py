@@ -307,7 +307,7 @@ def main() -> int:
     parser.add_argument("--root", default="results/star_v2_final")
     parser.add_argument("--log-root", default="logs/star_v2_final")
     parser.add_argument("--report-dir", default="reports/star_v2_final")
-    parser.add_argument("--phase", choices=["core_100k", "resume_300k", "all"], default="all")
+    parser.add_argument("--phase", choices=["core_100k", "resume_300k", "ablation_100k", "all"], default="all")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
     root = Path(args.root)
@@ -320,6 +320,8 @@ def main() -> int:
         rows.extend(discover_runs(root, "core_100k", 100000, log_root))
     if args.phase in ("resume_300k", "all"):
         rows.extend(discover_runs(root, "resume_300k", 300000, log_root))
+    if args.phase in ("ablation_100k", "all"):
+        rows.extend(discover_runs(root, "ablation_100k", 100000, log_root))
 
     write_csv(report / "run_manifest.csv", rows)
     write_csv(report / "main_results_by_seed.csv", [r for r in rows if r["completed"]])

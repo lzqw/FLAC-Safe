@@ -716,7 +716,7 @@ def main(argv: list[str] | None = None) -> int:
     oracle_parser.add_argument("--methods", default="star_v2")
     oracle_parser.add_argument("--dry-run", action="store_true")
     collect_parser = sub.add_parser("collect")
-    collect_parser.add_argument("--phase", choices=["core_100k", "resume_300k", "all"], default="all")
+    collect_parser.add_argument("--phase", choices=["core_100k", "resume_300k", "ablation_100k", "all"], default="all")
     collect_parser.add_argument("--strict", action="store_true")
     collect_parser.add_argument("--dry-run", action="store_true")
     eval_core_parser = sub.add_parser("eval-core")
