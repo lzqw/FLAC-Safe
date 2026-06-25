@@ -39,11 +39,13 @@ class RunSpec:
     steps: int
     config_name: str
     device: int
+    overrides: tuple[tuple[str, object], ...] = ()
 
     @property
     def run_name(self) -> str:
         safe_task = self.task.replace("-", "_")
-        return f"starv2_{self.phase}_{safe_task}_{self.method}_s{self.seed}"
+        safe_config = self.config_name.replace("-", "_")
+        return f"starv2_{self.phase}_{safe_task}_{safe_config}_{self.method}_s{self.seed}"
 
     @property
     def log_path(self) -> Path:
@@ -107,6 +109,7 @@ def tmux_sessions() -> list[str]:
 
 def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[str]:
     actor = load_json("configs/star_v2_selected_actor.json")
+    spec_overrides = dict(spec.overrides)
     params = {
         "task": spec.task,
         "method": spec.method,
@@ -117,6 +120,8 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
         "num_steps": spec.steps,
         "run_name": spec.run_name,
         "output_root": str(RESULT_ROOT / spec.phase),
+        "ablation_group": spec.phase,
+        "ablation_name": spec.config_name,
         "star_algorithm_version": "star_v2",
         "shadow_beta_mode": actor["shadow_beta_mode"],
         "shadow_num_strata": actor["shadow_num_strata"],
@@ -137,6 +142,7 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
         "save": True,
         "save_interval_steps": 50000 if spec.steps >= 50000 else spec.steps,
         "disable_wandb": True,
+        "online_eval_mode": "none",
     }
     if spec.phase.startswith("smoke"):
         params.update(
@@ -153,6 +159,7 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
         params["shadow_reference_mode"] = "corridor"
     if spec.method == "sac_lag":
         params["star_use_kl"] = False
+    params.update(spec_overrides)
     if extra:
         params.update(extra)
     cmd = ["python", "main_star.py"]
@@ -168,6 +175,86 @@ def smoke_specs() -> list[RunSpec]:
     for index, (task, method) in enumerate((t, m) for t in tasks for m in methods):
         device = 0 if index < 4 else 1
         specs.append(RunSpec("smoke5k_train", task, method, 0, 5000, "star_v2_smoke", device))
+    return specs
+
+
+def calibration_star_specs() -> list[RunSpec]:
+    tasks = ["SafetyPointGoal1-v0", "SafetyCarGoal1-v0"]
+    seeds = [0, 1]
+    configs = [
+        ("starA_thr045_lam05", 0.45, 0.5),
+        ("starB_thr050_lam05", 0.50, 0.5),
+        ("starC_thr050_lam10", 0.50, 1.0),
+        ("starD_thr055_lam10", 0.55, 1.0),
+    ]
+    specs: list[RunSpec] = []
+    index = 0
+    for config_name, threshold, lam in configs:
+        for task in tasks:
+            for seed in seeds:
+                device = index % 2
+                specs.append(
+                    RunSpec(
+                        "calibration_star100k",
+                        task,
+                        "star_v2",
+                        seed,
+                        100000,
+                        config_name,
+                        device,
+                        overrides=(
+                            ("star_risk_threshold", threshold),
+                            ("star_lambda", lam),
+                            ("shadow_beta_mode", "positive_linspace"),
+                            ("shadow_reference_mode", "corridor"),
+                            ("star_shadow_penalty_mode", "squared"),
+                            ("cost_gamma", 0.95),
+                            ("save_interval_steps", 50000),
+                            ("mechanism_log_interval_steps", 5000),
+                            ("metric_log_interval_steps", 5000),
+                            ("audit_diagnostic_interval", 100),
+                        ),
+                    )
+                )
+                index += 1
+    return specs
+
+
+def calibration_baseline_specs() -> list[RunSpec]:
+    tasks = ["SafetyPointGoal1-v0", "SafetyCarGoal1-v0"]
+    specs: list[RunSpec] = []
+    configs = [
+        ("pointwise_lam05", "pointwise_v2", (("star_lambda", 0.5),)),
+        ("pointwise_lam10", "pointwise_v2", (("star_lambda", 1.0),)),
+        ("saclag_lr3e4", "sac_lag", (("lagrange_lr", 3e-4), ("star_use_kl", False))),
+        ("saclag_lr1e3", "sac_lag", (("lagrange_lr", 1e-3), ("star_use_kl", False))),
+    ]
+    index = 0
+    for config_name, method, extra in configs:
+        for task in tasks:
+            specs.append(
+                RunSpec(
+                    "calibration_baseline100k",
+                    task,
+                    method,
+                    0,
+                    100000,
+                    config_name,
+                    index % 2,
+                    overrides=(
+                        ("star_risk_threshold", 0.50),
+                        ("star_lambda", 0.5),
+                        ("star_shadow_penalty_mode", "squared"),
+                        ("cost_gamma", 0.95),
+                        ("save_interval_steps", 50000),
+                        ("mechanism_log_interval_steps", 5000),
+                        ("metric_log_interval_steps", 5000),
+                        ("audit_diagnostic_interval", 100),
+                    )
+                    + extra,
+                )
+            )
+            index += 1
     return specs
 
 
@@ -280,6 +367,18 @@ def smoke(args: argparse.Namespace) -> int:
     return launch_specs(smoke_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
 
+def calibrate(args: argparse.Namespace) -> int:
+    grid = str(args.grid)
+    specs: list[RunSpec] = []
+    if grid in ("star", "all"):
+        specs.extend(calibration_star_specs())
+    if grid in ("baseline", "all"):
+        specs.extend(calibration_baseline_specs())
+    if grid not in ("star", "baseline", "all"):
+        raise ValueError(f"unknown calibration grid: {grid}")
+    return launch_specs(specs, dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
+
+
 def not_yet(command: str) -> int:
     ensure_dirs()
     print(f"{command}: not implemented yet in this scaffold. Complete prior gates before using this phase.")
@@ -293,8 +392,12 @@ def main(argv: list[str] | None = None) -> int:
     smoke_parser = sub.add_parser("smoke")
     smoke_parser.add_argument("--dry-run", action="store_true")
     smoke_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    calibrate_parser = sub.add_parser("calibrate")
+    calibrate_parser.add_argument("--grid", choices=["star", "baseline", "all"], default="all")
+    calibrate_parser.add_argument("--dry-run", action="store_true")
+    calibrate_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     sub.add_parser("status")
-    for name in ["calibrate", "core-100k", "resume-300k", "oracle", "ablation", "executor", "collect", "paper"]:
+    for name in ["core-100k", "resume-300k", "oracle", "ablation", "executor", "collect", "paper"]:
         sub.add_parser(name)
     args = parser.parse_args(argv)
     if args.command == "doctor":
@@ -303,6 +406,8 @@ def main(argv: list[str] | None = None) -> int:
         return status(args)
     if args.command == "smoke":
         return smoke(args)
+    if args.command == "calibrate":
+        return calibrate(args)
     return not_yet(args.command)
 
 
