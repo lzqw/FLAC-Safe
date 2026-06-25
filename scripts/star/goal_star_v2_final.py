@@ -511,6 +511,28 @@ def oracle(args: argparse.Namespace) -> int:
     return int(proc.returncode)
 
 
+def collect(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    cmd = [
+        "python",
+        "scripts/star/collect_star_v2_results.py",
+        "--root",
+        str(RESULT_ROOT),
+        "--log-root",
+        str(LOG_ROOT),
+        "--report-dir",
+        str(REPORT_ROOT),
+        "--phase",
+        str(args.phase),
+    ]
+    if args.strict:
+        cmd.append("--strict")
+    print(" ".join(shlex.quote(part) for part in cmd))
+    if args.dry_run:
+        return 0
+    return int(subprocess.run(cmd, cwd=REPO).returncode)
+
+
 def not_yet(command: str) -> int:
     ensure_dirs()
     print(f"{command}: not implemented yet in this scaffold. Complete prior gates before using this phase.")
@@ -542,7 +564,11 @@ def main(argv: list[str] | None = None) -> int:
     oracle_parser.add_argument("--max-states-per-run", type=int, default=200)
     oracle_parser.add_argument("--methods", default="star_v2")
     oracle_parser.add_argument("--dry-run", action="store_true")
-    for name in ["ablation", "executor", "collect", "paper"]:
+    collect_parser = sub.add_parser("collect")
+    collect_parser.add_argument("--phase", choices=["core_100k", "resume_300k", "all"], default="all")
+    collect_parser.add_argument("--strict", action="store_true")
+    collect_parser.add_argument("--dry-run", action="store_true")
+    for name in ["ablation", "executor", "paper"]:
         sub.add_parser(name)
     args = parser.parse_args(argv)
     if args.command == "doctor":
@@ -559,6 +585,8 @@ def main(argv: list[str] | None = None) -> int:
         return resume_300k(args)
     if args.command == "oracle":
         return oracle(args)
+    if args.command == "collect":
+        return collect(args)
     return not_yet(args.command)
 
 
