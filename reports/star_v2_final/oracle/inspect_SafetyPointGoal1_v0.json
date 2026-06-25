@@ -1,0 +1,312 @@
+{
+  "binary_cost": true,
+  "reset_obs_shape": [
+    60
+  ],
+  "safe_env": true,
+  "seed": 123,
+  "snapshot_reason": "supported",
+  "snapshot_supported": true,
+  "task": "SafetyPointGoal1-v0",
+  "wrapper_chain": [
+    {
+      "index": 0,
+      "np_random": {
+        "exists": true,
+        "type": "numpy.random._generator.Generator"
+      },
+      "repr": "<BinaryCostWrapper<SafeRescaleAction<SafeTimeLimit<OrderEnforcing<SafePassiveEnvChecker<Builder<SafetyPointGoal1-v0>>>>>>>",
+      "spec": {
+        "exists": true,
+        "type": "gymnasium.envs.registration.EnvSpec"
+      },
+      "task": {
+        "exists": true,
+        "type": "safety_gymnasium.tasks.goal.goal_level1.GoalLevel1"
+      },
+      "task.data": {
+        "act_shape": [
+          0
+        ],
+        "ctrl_shape": [
+          2
+        ],
+        "exists": true,
+        "mocap_pos_shape": [
+          0,
+          3
+        ],
+        "mocap_quat_shape": [
+          0,
+          4
+        ],
+        "qacc_warmstart_shape": [
+          9
+        ],
+        "qpos_shape": [
+          10
+        ],
+        "qvel_shape": [
+          9
+        ],
+        "time_shape": null,
+        "type": "mujoco._structs.MjData"
+      },
+      "task.model": {
+        "exists": true,
+        "type": "mujoco._structs.MjModel"
+      },
+      "type": "envs.safety_gym_wrapper.BinaryCostWrapper"
+    },
+    {
+      "index": 1,
+      "np_random": {
+        "exists": true,
+        "type": "numpy.random._generator.Generator"
+      },
+      "repr": "<SafeRescaleAction<SafeTimeLimit<OrderEnforcing<SafePassiveEnvChecker<Builder<SafetyPointGoal1-v0>>>>>>",
+      "spec": {
+        "exists": true,
+        "type": "gymnasium.envs.registration.EnvSpec"
+      },
+      "task": {
+        "exists": true,
+        "type": "safety_gymnasium.tasks.goal.goal_level1.GoalLevel1"
+      },
+      "task.data": {
+        "act_shape": [
+          0
+        ],
+        "ctrl_shape": [
+          2
+        ],
+        "exists": true,
+        "mocap_pos_shape": [
+          0,
+          3
+        ],
+        "mocap_quat_shape": [
+          0,
+          4
+        ],
+        "qacc_warmstart_shape": [
+          9
+        ],
+        "qpos_shape": [
+          10
+        ],
+        "qvel_shape": [
+          9
+        ],
+        "time_shape": null,
+        "type": "mujoco._structs.MjData"
+      },
+      "task.model": {
+        "exists": true,
+        "type": "mujoco._structs.MjModel"
+      },
+      "type": "safety_gymnasium.wrappers.rescale_action.SafeRescaleAction"
+    },
+    {
+      "_elapsed_steps": {
+        "exists": true,
+        "type": "builtins.int",
+        "value": 0
+      },
+      "index": 2,
+      "np_random": {
+        "exists": true,
+        "type": "numpy.random._generator.Generator"
+      },
+      "repr": "<SafeTimeLimit<OrderEnforcing<SafePassiveEnvChecker<Builder<SafetyPointGoal1-v0>>>>>",
+      "spec": {
+        "exists": true,
+        "type": "gymnasium.envs.registration.EnvSpec"
+      },
+      "task": {
+        "exists": true,
+        "type": "safety_gymnasium.tasks.goal.goal_level1.GoalLevel1"
+      },
+      "task.data": {
+        "act_shape": [
+          0
+        ],
+        "ctrl_shape": [
+          2
+        ],
+        "exists": true,
+        "mocap_pos_shape": [
+          0,
+          3
+        ],
+        "mocap_quat_shape": [
+          0,
+          4
+        ],
+        "qacc_warmstart_shape": [
+          9
+        ],
+        "qpos_shape": [
+          10
+        ],
+        "qvel_shape": [
+          9
+        ],
+        "time_shape": null,
+        "type": "mujoco._structs.MjData"
+      },
+      "task.model": {
+        "exists": true,
+        "type": "mujoco._structs.MjModel"
+      },
+      "type": "safety_gymnasium.wrappers.time_limit.SafeTimeLimit"
+    },
+    {
+      "index": 3,
+      "np_random": {
+        "exists": true,
+        "type": "numpy.random._generator.Generator"
+      },
+      "repr": "<OrderEnforcing<SafePassiveEnvChecker<Builder<SafetyPointGoal1-v0>>>>",
+      "spec": {
+        "exists": true,
+        "type": "gymnasium.envs.registration.EnvSpec"
+      },
+      "task": {
+        "exists": true,
+        "type": "safety_gymnasium.tasks.goal.goal_level1.GoalLevel1"
+      },
+      "task.data": {
+        "act_shape": [
+          0
+        ],
+        "ctrl_shape": [
+          2
+        ],
+        "exists": true,
+        "mocap_pos_shape": [
+          0,
+          3
+        ],
+        "mocap_quat_shape": [
+          0,
+          4
+        ],
+        "qacc_warmstart_shape": [
+          9
+        ],
+        "qpos_shape": [
+          10
+        ],
+        "qvel_shape": [
+          9
+        ],
+        "time_shape": null,
+        "type": "mujoco._structs.MjData"
+      },
+      "task.model": {
+        "exists": true,
+        "type": "mujoco._structs.MjModel"
+      },
+      "type": "gymnasium.wrappers.order_enforcing.OrderEnforcing"
+    },
+    {
+      "index": 4,
+      "np_random": {
+        "exists": true,
+        "type": "numpy.random._generator.Generator"
+      },
+      "repr": "<SafePassiveEnvChecker<Builder<SafetyPointGoal1-v0>>>",
+      "spec": {
+        "exists": true,
+        "type": "gymnasium.envs.registration.EnvSpec"
+      },
+      "task": {
+        "exists": true,
+        "type": "safety_gymnasium.tasks.goal.goal_level1.GoalLevel1"
+      },
+      "task.data": {
+        "act_shape": [
+          0
+        ],
+        "ctrl_shape": [
+          2
+        ],
+        "exists": true,
+        "mocap_pos_shape": [
+          0,
+          3
+        ],
+        "mocap_quat_shape": [
+          0,
+          4
+        ],
+        "qacc_warmstart_shape": [
+          9
+        ],
+        "qpos_shape": [
+          10
+        ],
+        "qvel_shape": [
+          9
+        ],
+        "time_shape": null,
+        "type": "mujoco._structs.MjData"
+      },
+      "task.model": {
+        "exists": true,
+        "type": "mujoco._structs.MjModel"
+      },
+      "type": "safety_gymnasium.wrappers.env_checker.SafePassiveEnvChecker"
+    },
+    {
+      "index": 5,
+      "np_random": {
+        "exists": true,
+        "type": "numpy.random._generator.Generator"
+      },
+      "repr": "<safety_gymnasium.builder.Builder object at 0x7f5643d96c90>",
+      "spec": {
+        "exists": true,
+        "type": "gymnasium.envs.registration.EnvSpec"
+      },
+      "task": {
+        "exists": true,
+        "type": "safety_gymnasium.tasks.goal.goal_level1.GoalLevel1"
+      },
+      "task.data": {
+        "act_shape": [
+          0
+        ],
+        "ctrl_shape": [
+          2
+        ],
+        "exists": true,
+        "mocap_pos_shape": [
+          0,
+          3
+        ],
+        "mocap_quat_shape": [
+          0,
+          4
+        ],
+        "qacc_warmstart_shape": [
+          9
+        ],
+        "qpos_shape": [
+          10
+        ],
+        "qvel_shape": [
+          9
+        ],
+        "time_shape": null,
+        "type": "mujoco._structs.MjData"
+      },
+      "task.model": {
+        "exists": true,
+        "type": "mujoco._structs.MjModel"
+      },
+      "type": "safety_gymnasium.builder.Builder"
+    }
+  ]
+}

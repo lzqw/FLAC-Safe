@@ -1,0 +1,14 @@
+[
+  {
+    "path": "reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json",
+    "snapshot_reason": "supported",
+    "snapshot_supported": true,
+    "task": "SafetyPointGoal1-v0"
+  },
+  {
+    "path": "reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json",
+    "snapshot_reason": "supported",
+    "snapshot_supported": true,
+    "task": "SafetyCarGoal1-v0"
+  }
+]
