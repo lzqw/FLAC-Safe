@@ -57,6 +57,20 @@ class SafeReplayMemory:
     def __len__(self):
         return len(self.buffer)
 
+    def state_dict(self):
+        return {
+            "capacity": self.capacity,
+            "recent_fraction": self.recent_fraction,
+            "buffer": self.buffer,
+            "position": self.position,
+        }
+
+    def load_state_dict(self, state):
+        self.capacity = int(state["capacity"])
+        self.recent_fraction = float(state.get("recent_fraction", self.recent_fraction))
+        self.buffer = state["buffer"]
+        self.position = int(state.get("position", len(self.buffer) % self.capacity))
+
     def save_buffer(self, save_path, i_episode):
         print('Saving buffer to {}'.format(save_path))
 

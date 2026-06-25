@@ -145,6 +145,7 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
         "training_execution_mode": "raw",
         "eval": False,
         "save": True,
+        "save_training_state": True,
         "save_interval_steps": 50000 if spec.steps >= 50000 else spec.steps,
         "disable_wandb": True,
         "online_eval_mode": "none",
@@ -319,6 +320,31 @@ def core_100k_specs() -> list[RunSpec]:
     return specs
 
 
+def resume_300k_specs() -> list[RunSpec]:
+    specs: list[RunSpec] = []
+    for core in core_100k_specs():
+        checkpoint = core.final_checkpoint
+        specs.append(
+            RunSpec(
+                "resume_300k",
+                core.task,
+                core.method,
+                core.seed,
+                300000,
+                core.config_name,
+                core.device,
+                overrides=core.overrides
+                + (
+                    ("resume_checkpoint", str(checkpoint)),
+                    ("resume_run_dir", str(RESULT_ROOT / "resume_300k" / core.task / core.method / core.run_name)),
+                    ("save_training_state", True),
+                    ("save_interval_steps", 50000),
+                ),
+            )
+        )
+    return specs
+
+
 def doctor(args: argparse.Namespace) -> int:
     ensure_dirs()
     print(f"repo={REPO}")
@@ -444,6 +470,10 @@ def core_100k(args: argparse.Namespace) -> int:
     return launch_specs(core_100k_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
 
+def resume_300k(args: argparse.Namespace) -> int:
+    return launch_specs(resume_300k_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
+
+
 def oracle(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
@@ -501,6 +531,9 @@ def main(argv: list[str] | None = None) -> int:
     core_parser = sub.add_parser("core-100k")
     core_parser.add_argument("--dry-run", action="store_true")
     core_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    resume_parser = sub.add_parser("resume-300k")
+    resume_parser.add_argument("--dry-run", action="store_true")
+    resume_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     sub.add_parser("status")
     oracle_parser = sub.add_parser("oracle")
     oracle_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
@@ -509,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:
     oracle_parser.add_argument("--max-states-per-run", type=int, default=200)
     oracle_parser.add_argument("--methods", default="star_v2")
     oracle_parser.add_argument("--dry-run", action="store_true")
-    for name in ["resume-300k", "ablation", "executor", "collect", "paper"]:
+    for name in ["ablation", "executor", "collect", "paper"]:
         sub.add_parser(name)
     args = parser.parse_args(argv)
     if args.command == "doctor":
@@ -522,6 +555,8 @@ def main(argv: list[str] | None = None) -> int:
         return calibrate(args)
     if args.command == "core-100k":
         return core_100k(args)
+    if args.command == "resume-300k":
+        return resume_300k(args)
     if args.command == "oracle":
         return oracle(args)
     return not_yet(args.command)

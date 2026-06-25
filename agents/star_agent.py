@@ -494,7 +494,7 @@ class STARAgent(SACBase):
         return path
 
     def load_checkpoint(self, path: str) -> None:
-        state = torch.load(path, map_location=self.device)
+        state = torch.load(path, map_location=self.device, weights_only=False)
         ckpt_version = str(state.get("star_algorithm_version", "star_v1"))
         if ckpt_version != self.star_algorithm_version:
             message = f"loading {ckpt_version} checkpoint into {self.star_algorithm_version} agent"

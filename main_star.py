@@ -5,6 +5,7 @@ import datetime
 import itertools
 import json
 import os
+import random
 import re
 import time
 from pathlib import Path
@@ -217,6 +218,92 @@ def unique_run_dir(config) -> tuple[Path, str]:
         run_name = run_dir.name
     run_dir.mkdir(parents=True, exist_ok=False)
     return run_dir, run_name
+
+
+def checkpoint_run_dir(config) -> tuple[Path, str] | None:
+    resume_checkpoint = str(getattr(config, "resume_checkpoint", "") or "").strip()
+    if not resume_checkpoint:
+        return None
+    explicit = str(getattr(config, "resume_run_dir", "") or "").strip()
+    run_dir = Path(explicit) if explicit else Path(resume_checkpoint).resolve().parents[1]
+    if not run_dir.exists():
+        if explicit:
+            run_dir.mkdir(parents=True, exist_ok=False)
+        else:
+            raise FileNotFoundError(f"resume run_dir does not exist: {run_dir}")
+    return run_dir, run_dir.name
+
+
+def _rng_state() -> dict:
+    state = {
+        "python_random_state": random.getstate(),
+        "numpy_random_state": np.random.get_state(),
+        "torch_random_state": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["torch_cuda_random_state_all"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def _restore_rng_state(state: dict) -> None:
+    if "python_random_state" in state:
+        random.setstate(state["python_random_state"])
+    if "numpy_random_state" in state:
+        np.random.set_state(state["numpy_random_state"])
+    if "torch_random_state" in state:
+        torch.set_rng_state(state["torch_random_state"])
+    if torch.cuda.is_available() and "torch_cuda_random_state_all" in state:
+        torch.cuda.set_rng_state_all(state["torch_cuda_random_state_all"])
+
+
+def save_training_checkpoint(
+    agent: STARAgent,
+    checkpoint_dir: Path,
+    suffix: str,
+    *,
+    memory: SafeReplayMemory,
+    total_steps: int,
+    updates: int,
+    train_total_cost: float,
+    best_raw_reward: float,
+    episode: int,
+    config,
+) -> str:
+    path = agent.save_checkpoint(str(checkpoint_dir), suffix)
+    if not bool(getattr(config, "save_training_state", False)):
+        return path
+    state = torch.load(path, map_location="cpu", weights_only=False)
+    state.update(
+        {
+            "training_state_version": 1,
+            "replay_memory": memory.state_dict(),
+            "total_steps": int(total_steps),
+            "updates": int(updates),
+            "train_total_cost": float(train_total_cost),
+            "best_raw_reward": float(best_raw_reward),
+            "episode": int(episode),
+            "rng_state": _rng_state(),
+        }
+    )
+    torch.save(state, path)
+    print(f"Saving full STAR training state to {path}", flush=True)
+    return path
+
+
+def load_training_checkpoint(agent: STARAgent, memory: SafeReplayMemory, path: str) -> dict:
+    checkpoint = Path(path)
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"resume checkpoint does not exist: {checkpoint}")
+    state = torch.load(str(checkpoint), map_location="cpu", weights_only=False)
+    agent.load_checkpoint(str(checkpoint))
+    if "replay_memory" not in state:
+        raise ValueError(
+            f"{checkpoint} does not contain replay_memory; rerun with --save_training_state True for clean resume"
+        )
+    memory.load_state_dict(state["replay_memory"])
+    if "rng_state" in state:
+        _restore_rng_state(state["rng_state"])
+    return state
 
 
 def append_csv(path: Path, row: dict, fields: list[str]) -> None:
@@ -555,19 +642,42 @@ def train_loop(config) -> None:
     env.action_space.seed(config.seed)
     agent = STARAgent(env.observation_space.shape[0], env.action_space, config)
 
-    run_dir, run_name = unique_run_dir(config)
+    resume_checkpoint = str(getattr(config, "resume_checkpoint", "") or "").strip()
+    resume_dir = checkpoint_run_dir(config)
+    run_dir, run_name = resume_dir if resume_dir is not None else unique_run_dir(config)
     checkpoint_dir = run_dir / "checkpoint"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    with (run_dir / "config.log").open("w") as f:
+    with (run_dir / ("resume_config.log" if resume_checkpoint else "config.log")).open("w") as f:
         f.write(str(config))
-    with (run_dir / "run_metadata.json").open("w") as f:
+    metadata_path = run_dir / "run_metadata.json"
+    with metadata_path.open("w" if not resume_checkpoint else "r+" if metadata_path.exists() else "w") as f:
         metadata = serializable_config(config)
         metadata.update({
             "run_name": run_name,
             "run_dir": str(run_dir),
             "start_time": datetime.datetime.now().isoformat(),
             "git_sha": os.popen("git rev-parse HEAD 2>/dev/null").read().strip(),
+            "resume_checkpoint": resume_checkpoint,
+            "save_training_state": bool(getattr(config, "save_training_state", False)),
         })
+        if resume_checkpoint and metadata_path.exists() and metadata_path.stat().st_size > 0:
+            try:
+                f.seek(0)
+                old = json.load(f)
+                old.setdefault("resume_events", []).append(
+                    {
+                        "time": datetime.datetime.now().isoformat(),
+                        "checkpoint": resume_checkpoint,
+                        "target_num_steps": int(config.num_steps),
+                    }
+                )
+                old.update(metadata)
+                metadata = old
+                f.seek(0)
+                f.truncate()
+            except json.JSONDecodeError:
+                f.seek(0)
+                f.truncate()
         json.dump(metadata, f, indent=2, sort_keys=True)
 
     memory = SafeReplayMemory(config.replay_size, config.seed, recent_fraction=config.recent_fraction)
@@ -575,6 +685,14 @@ def train_loop(config) -> None:
     updates = 0
     train_total_cost = 0.0
     best_raw_reward = -1e9
+    start_episode = 1
+    if resume_checkpoint:
+        state = load_training_checkpoint(agent, memory, resume_checkpoint)
+        total_steps = int(state.get("total_steps", 0))
+        updates = int(state.get("updates", state.get("total_updates", 0)))
+        train_total_cost = float(state.get("train_total_cost", 0.0))
+        best_raw_reward = float(state.get("best_raw_reward", -1e9))
+        start_episode = int(state.get("episode", 0)) + 1
     eval_interval = max(1, int(config.eval_interval_steps or config.eval_numsteps))
     save_interval = int(config.save_interval_steps)
     metric_interval = max(1, int(getattr(config, "mechanism_log_interval_steps", config.metric_log_interval_steps)))
@@ -618,7 +736,7 @@ def train_loop(config) -> None:
         flush=True,
     )
 
-    for episode in itertools.count(1):
+    for episode in itertools.count(start_episode):
         episode_start = total_steps
         state = reset_env(env, seed=config.seed if episode == 1 else None)
         agent.observe(state)
@@ -705,10 +823,32 @@ def train_loop(config) -> None:
                 eval_time += time.perf_counter() - t0
                 if config.save and raw_eval["episode_reward"] >= best_raw_reward:
                     best_raw_reward = raw_eval["episode_reward"]
-                    agent.save_checkpoint(str(checkpoint_dir), "best")
+                    save_training_checkpoint(
+                        agent,
+                        checkpoint_dir,
+                        "best",
+                        memory=memory,
+                        total_steps=total_steps,
+                        updates=updates,
+                        train_total_cost=train_total_cost,
+                        best_raw_reward=best_raw_reward,
+                        episode=episode,
+                        config=config,
+                    )
 
             if config.save and save_interval > 0 and total_steps % save_interval == 0:
-                agent.save_checkpoint(str(checkpoint_dir), f"step_{total_steps}")
+                save_training_checkpoint(
+                    agent,
+                    checkpoint_dir,
+                    f"step_{total_steps}",
+                    memory=memory,
+                    total_steps=total_steps,
+                    updates=updates,
+                    train_total_cost=train_total_cost,
+                    best_raw_reward=best_raw_reward,
+                    episode=episode,
+                    config=config,
+                )
 
             if total_steps >= config.num_steps:
                 break
@@ -790,7 +930,18 @@ def train_loop(config) -> None:
         if total_steps >= config.num_steps:
             break
     if bool(getattr(config, "final_checkpoint", False)):
-        agent.save_checkpoint(str(checkpoint_dir), "final")
+        save_training_checkpoint(
+            agent,
+            checkpoint_dir,
+            "final",
+            memory=memory,
+            total_steps=total_steps,
+            updates=updates,
+            train_total_cost=train_total_cost,
+            best_raw_reward=best_raw_reward,
+            episode=episode,
+            config=config,
+        )
     env.close()
     if wandb_enabled(config):
         wandb.finish()
