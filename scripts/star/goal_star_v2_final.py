@@ -49,6 +49,14 @@ class RunSpec:
     def log_path(self) -> Path:
         return LOG_ROOT / self.phase / f"{self.run_name}.log"
 
+    @property
+    def result_dir(self) -> Path:
+        return RESULT_ROOT / self.phase / self.task / self.method / self.run_name
+
+    @property
+    def final_checkpoint(self) -> Path:
+        return self.result_dir / "checkpoint" / "final.torch"
+
 
 def run(cmd: list[str], *, check: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=check)
@@ -210,8 +218,15 @@ def launch_specs(specs: list[RunSpec], *, dry_run: bool, max_submit: int) -> int
         spec.log_path.parent.mkdir(parents=True, exist_ok=True)
         command_text = " ".join(shlex.quote(part) for part in cmd)
         already_running = spec.run_name in sessions
-        can_submit = dry_run or already_running or submitted < remaining_slots
-        status_value = "planned" if dry_run or not can_submit else ("running" if already_running else "submitted")
+        completed = spec.final_checkpoint.exists()
+        can_submit = dry_run or completed or already_running or submitted < remaining_slots
+        status_value = (
+            "completed"
+            if completed
+            else "planned"
+            if dry_run or not can_submit
+            else ("running" if already_running else "submitted")
+        )
         rows.append(
             {
                 "phase": spec.phase,
@@ -227,6 +242,9 @@ def launch_specs(specs: list[RunSpec], *, dry_run: bool, max_submit: int) -> int
         )
         print(f"{spec.run_name}: CUDA_VISIBLE_DEVICES={spec.device} {command_text}")
         if dry_run:
+            continue
+        if completed:
+            print(f"skip_completed={spec.run_name}")
             continue
         if not can_submit:
             print(f"defer_no_slot={spec.run_name}")
