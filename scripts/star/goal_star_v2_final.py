@@ -196,14 +196,20 @@ def status(args: argparse.Namespace) -> int:
     return 0
 
 
-def launch_specs(specs: list[RunSpec], *, dry_run: bool) -> int:
+def launch_specs(specs: list[RunSpec], *, dry_run: bool, max_submit: int) -> int:
     ensure_dirs()
     rows = []
     sessions = set(tmux_sessions())
+    starv2_running = [name for name in sessions if name.startswith("starv2_")]
+    remaining_slots = max(0, int(max_submit) - len(starv2_running))
+    submitted = 0
     for spec in specs:
         cmd = build_main_star_command(spec)
         spec.log_path.parent.mkdir(parents=True, exist_ok=True)
         command_text = " ".join(shlex.quote(part) for part in cmd)
+        already_running = spec.run_name in sessions
+        can_submit = dry_run or already_running or submitted < remaining_slots
+        status_value = "planned" if dry_run or not can_submit else ("running" if already_running else "submitted")
         rows.append(
             {
                 "phase": spec.phase,
@@ -213,12 +219,15 @@ def launch_specs(specs: list[RunSpec], *, dry_run: bool) -> int:
                 "steps": spec.steps,
                 "device": spec.device,
                 "run_name": spec.run_name,
-                "status": "planned" if dry_run else "submitted",
+                "status": status_value,
                 "log_path": str(spec.log_path),
             }
         )
         print(f"{spec.run_name}: CUDA_VISIBLE_DEVICES={spec.device} {command_text}")
         if dry_run:
+            continue
+        if not can_submit:
+            print(f"defer_no_slot={spec.run_name}")
             continue
         if spec.run_name in sessions:
             print(f"skip_existing_session={spec.run_name}")
@@ -231,12 +240,13 @@ def launch_specs(specs: list[RunSpec], *, dry_run: bool) -> int:
             f"{command_text} > {shlex.quote(str(spec.log_path))} 2>&1"
         )
         subprocess.run(["tmux", "new", "-d", "-s", spec.run_name, tmux_cmd], cwd=REPO, check=True)
+        submitted += 1
     write_status(rows)
     return 0
 
 
 def smoke(args: argparse.Namespace) -> int:
-    return launch_specs(smoke_specs(), dry_run=bool(args.dry_run))
+    return launch_specs(smoke_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
 
 def not_yet(command: str) -> int:
@@ -251,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor")
     smoke_parser = sub.add_parser("smoke")
     smoke_parser.add_argument("--dry-run", action="store_true")
+    smoke_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     sub.add_parser("status")
     for name in ["calibrate", "core-100k", "resume-300k", "oracle", "ablation", "executor", "collect", "paper"]:
         sub.add_parser(name)
