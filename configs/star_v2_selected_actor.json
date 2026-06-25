@@ -1,6 +1,6 @@
 {
   "schema": "star_v2_selected_actor",
-  "algorithm_git_sha": "pending",
+  "algorithm_git_sha": "082ce0b5661d14f85cde274227591fe579a8303f",
   "star_algorithm_version": "star_v2",
   "method": "star_v2",
   "cost_gamma": 0.95,
@@ -13,11 +13,13 @@
   "shadow_temperature": 0.05,
   "star_shadow_penalty_mode": "squared",
   "star_risk_threshold": 0.5,
-  "star_lambda": 0.5,
+  "star_lambda": 1.0,
   "star_use_kl": true,
   "star_kl_coef": 1.0,
   "star_kl_target": 0.01,
   "star_ref_update_interval": 20,
   "training_execution_mode": "raw",
-  "evaluation_execution_mode": "raw"
+  "evaluation_execution_mode": "raw",
+  "selection_source": "reports/star_v2_final/calibration/star_selection.md",
+  "selected_calibration_name": "starC_thr050_lam10"
 }
