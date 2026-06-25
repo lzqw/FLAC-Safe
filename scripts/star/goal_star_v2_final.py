@@ -482,7 +482,14 @@ def launch_specs(specs: list[RunSpec], *, dry_run: bool, max_submit: int) -> int
     ensure_dirs()
     rows = []
     sessions = set(tmux_sessions())
-    starv2_running = [name for name in sessions if name.startswith("starv2_")]
+    # Count only training run sessions against the experiment parallelism.
+    # Scheduler/monitor sessions may use the starv2_ prefix but do not occupy
+    # GPU training slots.
+    starv2_running = [
+        name
+        for name in sessions
+        if name.startswith("starv2_") and not name.endswith("scheduler")
+    ]
     remaining_slots = max(0, int(max_submit) - len(starv2_running))
     submitted = 0
     for spec in specs:
