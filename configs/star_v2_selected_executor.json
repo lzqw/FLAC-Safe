@@ -1,0 +1,13 @@
+{
+  "schema": "star_v2_selected_executor",
+  "algorithm_git_sha": "pending",
+  "selection_status": "unselected",
+  "validation_seeds": [700000, 700001, 700002, 700003, 700004, 700005, 700006, 700007, 700008, 700009],
+  "confirmation_seeds": [800000, 800001, 800002, 800003, 800004, 800005, 800006, 800007, 800008, 800009, 800010, 800011, 800012, 800013, 800014, 800015, 800016, 800017, 800018, 800019],
+  "candidate_grid": [8, 16],
+  "margin_grid": [0.0, 0.02, 0.05],
+  "selected": {
+    "star_exec_candidates": null,
+    "star_exec_margin": null
+  }
+}

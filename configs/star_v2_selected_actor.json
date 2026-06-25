@@ -1,0 +1,23 @@
+{
+  "schema": "star_v2_selected_actor",
+  "algorithm_git_sha": "pending",
+  "star_algorithm_version": "star_v2",
+  "method": "star_v2",
+  "cost_gamma": 0.95,
+  "cost_critic_reduce": "max",
+  "shadow_aggregation": "log_mean_exp",
+  "shadow_beta_mode": "positive_linspace",
+  "shadow_reference_mode": "corridor",
+  "shadow_num_strata": 16,
+  "shadow_samples_per_stratum": 1,
+  "shadow_temperature": 0.05,
+  "star_shadow_penalty_mode": "squared",
+  "star_risk_threshold": 0.5,
+  "star_lambda": 0.5,
+  "star_use_kl": true,
+  "star_kl_coef": 1.0,
+  "star_kl_target": 0.01,
+  "star_ref_update_interval": 20,
+  "training_execution_mode": "raw",
+  "evaluation_execution_mode": "raw"
+}

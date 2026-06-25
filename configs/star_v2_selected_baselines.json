@@ -1,0 +1,34 @@
+{
+  "schema": "star_v2_selected_baselines",
+  "algorithm_git_sha": "pending",
+  "shared": {
+    "star_algorithm_version": "star_v2",
+    "cost_gamma": 0.95,
+    "cost_critic_reduce": "max",
+    "star_risk_threshold": 0.5,
+    "star_lambda": 0.5,
+    "star_shadow_penalty_mode": "squared",
+    "star_use_kl": true,
+    "star_kl_coef": 1.0,
+    "star_kl_target": 0.01,
+    "star_ref_update_interval": 20,
+    "training_execution_mode": "raw"
+  },
+  "methods": {
+    "pointwise_v2": {
+      "method": "pointwise_v2"
+    },
+    "current_only_v2": {
+      "method": "current_only_v2",
+      "shadow_reference_mode": "current_only",
+      "shadow_beta_mode": "positive_linspace",
+      "shadow_num_strata": 16,
+      "shadow_samples_per_stratum": 1,
+      "shadow_temperature": 0.05
+    },
+    "sac_lag": {
+      "method": "sac_lag",
+      "lagrange_lr": 0.0003
+    }
+  }
+}

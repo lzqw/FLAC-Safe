@@ -1,0 +1,28 @@
+{
+  "schema": "star_v2_selected_full",
+  "algorithm_git_sha": "pending",
+  "actor_config_path": "configs/star_v2_selected_actor.json",
+  "baseline_config_path": "configs/star_v2_selected_baselines.json",
+  "executor_config_path": "configs/star_v2_selected_executor.json",
+  "training_execution_mode": "raw",
+  "evaluation_execution_mode": "both",
+  "development_tasks": [
+    "SafetyPointGoal1-v0",
+    "SafetyCarGoal1-v0"
+  ],
+  "preferred_final_tasks": [
+    "SafetyPointGoal1-v0",
+    "SafetyCarGoal1-v0",
+    "SafetyPointButton1-v0",
+    "SafetyCarButton1-v0"
+  ],
+  "fallback_task_policy": {
+    "SafetyPointButton1-v0": "SafetyPointPush1-v0",
+    "SafetyCarButton1-v0": "SafetyCarPush1-v0"
+  },
+  "result_roots": {
+    "results": "results/star_v2_final",
+    "logs": "logs/star_v2_final",
+    "reports": "reports/star_v2_final"
+  }
+}
