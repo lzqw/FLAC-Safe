@@ -24,5 +24,11 @@
     "results": "results/star_v2_final",
     "logs": "logs/star_v2_final",
     "reports": "reports/star_v2_final"
-  }
+  },
+  "selected_final_tasks": [
+    "SafetyPointGoal1-v0",
+    "SafetyCarGoal1-v0",
+    "SafetyPointButton1-v0",
+    "SafetyCarButton1-v0"
+  ]
 }
