@@ -1,0 +1,42 @@
+reports/star_goal/phase0_verification.md:8:tests/test_shadow_audit.py::test_shadow_spread_k1_is_zero_not_nan
+reports/star_goal/software_report.md:18:mujoco 2.3.3
+reports/star_goal/software_report.md:31:safety_gymnasium IMPORT_ERROR ModuleNotFoundError("No module named 'safety_gymnasium'")
+reports/star_goal/software_report.md:32:gymnasium IMPORT_ERROR ModuleNotFoundError("No module named 'gymnasium'")
+reports/star_goal/software_report.md:33:mujoco IMPORT_ERROR ModuleNotFoundError("No module named 'mujoco'")
+reports/star_goal/software_report.md:34:pytest IMPORT_ERROR ModuleNotFoundError("No module named 'pytest'")
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:53:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:57:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:102:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:106:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:156:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:160:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:205:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:209:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:254:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:258:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:303:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyCarGoal1_v0.json:307:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:53:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:57:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:102:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:106:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:156:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:160:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:205:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:209:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:254:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:258:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:303:        "type": "mujoco._structs.MjData"
+reports/star_v2_final/oracle/inspect_SafetyPointGoal1_v0.json:307:        "type": "mujoco._structs.MjModel"
+reports/star_v2_final/provenance/environment.txt:5:torch=unavailable:ModuleNotFoundError:No module named 'torch'
+reports/star_v2_final/provenance/environment.txt:6:safety_gymnasium=unavailable:ModuleNotFoundError:No module named 'safety_gymnasium'
+reports/star_v2_final/provenance/environment.txt:7:gymnasium=unavailable:ModuleNotFoundError:No module named 'gymnasium'
+reports/star_v2_final/provenance/environment.txt:8:mujoco=unavailable:ModuleNotFoundError:No module named 'mujoco'
+reports/star_v2_final/tests/smoke_summary.md:33:- Runtime error scan: clean for Traceback, ERROR, NaN/nan, OOM, out of memory, RuntimeError, MuJoCo.
+reports/star_v2_final/paired_comparisons.csv:2:STAR-Actor raw vs Pointwise raw,core_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+reports/star_v2_final/paired_comparisons.csv:3:STAR-Actor raw vs SAC-Lag-local raw,core_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+reports/star_v2_final/paired_comparisons.csv:4:Full STAR raw vs filtered,core_100k,cost,lower,0,nan,nan,nan,nan,False,
+reports/star_v2_final/paired_comparisons.csv:5:Full STAR vs STAR-Exec,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+reports/star_v2_final/paired_comparisons.csv:6:corridor vs current-only,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+reports/star_v2_final/paired_comparisons.csv:7:log-mean-exp vs mean,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+reports/star_v2_final/paired_comparisons.csv:8:log-mean-exp vs max,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
