@@ -26,7 +26,13 @@ THREAD_ENV = {
     "OPENBLAS_NUM_THREADS": "1",
     "NUMEXPR_NUM_THREADS": "1",
     "WANDB_MODE": "offline",
+    "WANDB_DISABLED": "true",
     "MUJOCO_GL": "egl",
+    "STAR_STORAGE_ROOT": "/root/autodl-tmp/star_v2_storage",
+    "TMPDIR": "/root/autodl-tmp/star_v2_storage/tmp",
+    "TORCH_HOME": "/root/autodl-tmp/star_v2_storage/cache/torch",
+    "MPLCONFIGDIR": "/root/autodl-tmp/star_v2_storage/cache/matplotlib",
+    "XDG_CACHE_HOME": "/root/autodl-tmp/star_v2_storage/cache/xdg",
 }
 
 
@@ -564,6 +570,68 @@ def core_100k(args: argparse.Namespace) -> int:
     return launch_specs(core_100k_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
 
+def plan_core_100k(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    specs = core_100k_specs()
+    output = Path(getattr(args, "output", REPORT_ROOT / "recovery" / "core100k_resume_plan.csv"))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    sessions = set(tmux_sessions())
+    fields = [
+        "task", "method", "seed", "expected_dir", "status",
+        "checkpoint_exists", "eval_exists", "log_exists", "has_error", "action",
+    ]
+    rows = []
+    for spec in specs:
+        log_exists = spec.log_path.exists()
+        has_error = False
+        if log_exists:
+            text = spec.log_path.read_text(errors="ignore")
+            error_terms = [
+                "Traceback", "RuntimeError", "CUDA out of memory", "out of memory",
+                "NaN", "nan", "Segmentation fault", "MuJoCo", "Exception", "Error",
+                "No space left",
+            ]
+            has_error = any(term in text for term in error_terms)
+        eval_path = spec.result_dir / "corrected_eval_episodes.csv"
+        checkpoint_exists = spec.final_checkpoint.exists()
+        eval_exists = eval_path.exists()
+        if spec.run_name in sessions:
+            status_value = "RUNNING"
+            action = "skip"
+        elif checkpoint_exists and eval_exists and not has_error:
+            status_value = "COMPLETED_TRAINING_AND_EVAL"
+            action = "skip"
+        elif checkpoint_exists and not has_error:
+            status_value = "COMPLETED_TRAINING_NEEDS_EVAL"
+            action = "eval_only"
+        elif has_error:
+            status_value = "FAILED"
+            action = "manual_investigation"
+        else:
+            status_value = "PENDING"
+            action = "relaunch_training"
+        rows.append({
+            "task": spec.task,
+            "method": spec.method,
+            "seed": spec.seed,
+            "expected_dir": str(spec.result_dir),
+            "status": status_value,
+            "checkpoint_exists": checkpoint_exists,
+            "eval_exists": eval_exists,
+            "log_exists": log_exists,
+            "has_error": has_error,
+            "action": action,
+        })
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    with tmp.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    tmp.replace(output)
+    print(f"plan_rows={len(rows)} output={output}")
+    return 0
+
+
 def resume_300k(args: argparse.Namespace) -> int:
     return launch_specs(resume_300k_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
@@ -711,9 +779,17 @@ def main(argv: list[str] | None = None) -> int:
     core_parser = sub.add_parser("core-100k")
     core_parser.add_argument("--dry-run", action="store_true")
     core_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    core_parser.add_argument("--resume", action="store_true", help="compatibility no-op; completed runs are always skipped")
+    plan_core_parser = sub.add_parser("plan-core-100k")
+    plan_core_parser.add_argument("--output", type=Path, default=REPORT_ROOT / "recovery" / "core100k_resume_plan.csv")
     resume_parser = sub.add_parser("resume-300k")
     resume_parser.add_argument("--dry-run", action="store_true")
     resume_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    resume_parser.add_argument("--resume", action="store_true", help="compatibility no-op; completed runs are always skipped")
+    final_parser = sub.add_parser("final-300k")
+    final_parser.add_argument("--dry-run", action="store_true")
+    final_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    final_parser.add_argument("--resume", action="store_true", help="compatibility no-op; completed runs are always skipped")
     sub.add_parser("status")
     oracle_parser = sub.add_parser("oracle")
     oracle_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
@@ -733,6 +809,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     eval_core_parser.add_argument("--overwrite-derived", action="store_true")
     eval_core_parser.add_argument("--dry-run", action="store_true")
+    eval_core_alias_parser = sub.add_parser("eval-core-100k")
+    eval_core_alias_parser.add_argument(
+        "--eval-seeds",
+        default="500000,500001,500002,500003,500004,500005,500006,500007,500008,500009",
+    )
+    eval_core_alias_parser.add_argument("--overwrite-derived", action="store_true")
+    eval_core_alias_parser.add_argument("--dry-run", action="store_true")
     ablation_parser = sub.add_parser("ablation")
     ablation_parser.add_argument("--dry-run", action="store_true")
     ablation_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
@@ -745,7 +828,10 @@ def main(argv: list[str] | None = None) -> int:
     executor_parser.add_argument("--dry-run", action="store_true")
     paper_parser = sub.add_parser("paper")
     paper_parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args(argv)
+    args, unknown = parser.parse_known_args(argv)
+    if unknown:
+        ignored = " ".join(unknown)
+        print(f"warning: ignoring compatibility arguments: {ignored}")
     if args.command == "doctor":
         return doctor(args)
     if args.command == "status":
@@ -756,13 +842,15 @@ def main(argv: list[str] | None = None) -> int:
         return calibrate(args)
     if args.command == "core-100k":
         return core_100k(args)
-    if args.command == "resume-300k":
+    if args.command == "plan-core-100k":
+        return plan_core_100k(args)
+    if args.command in ("resume-300k", "final-300k"):
         return resume_300k(args)
     if args.command == "oracle":
         return oracle(args)
     if args.command == "collect":
         return collect(args)
-    if args.command == "eval-core":
+    if args.command in ("eval-core", "eval-core-100k"):
         return eval_core(args)
     if args.command == "ablation":
         return ablation(args)
