@@ -4,5 +4,5 @@ results -> /root/autodl-tmp/star_v2_storage/results
 logs -> /root/autodl-tmp/star_v2_storage/logs
 Filesystem      Size  Used Avail Use% Mounted on
 overlay          30G   27G  3.8G  88% /
-/dev/md0         50G  116K   50G   1% /root/autodl-tmp
-0	/root/autodl-tmp/star_v2_storage
+/dev/md0         50G   14G   37G  28% /root/autodl-tmp
+14G	/root/autodl-tmp/star_v2_storage

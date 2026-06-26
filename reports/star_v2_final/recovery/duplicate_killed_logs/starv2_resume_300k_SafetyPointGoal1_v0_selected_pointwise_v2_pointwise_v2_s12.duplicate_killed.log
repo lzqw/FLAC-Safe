@@ -1,0 +1,47 @@
+AdroitHandRelocateDense-v1, AdroitHandHammerDense-v1, AdroitHandDoorDense-v1 environment's reward functions were updated in v1.2.1 without an environment version update. Therefore, use gymnasium-robotics==1.2.0 for v1 reproducibility or use v2 in gymnasium-robotics>=1.4.3. See https://github.com/Farama-Foundation/Gymnasium-Robotics/pull/220 for more details
+AdroitHandRelocateDense-v1, AdroitHandHammerDense-v1, AdroitHandDoorDense-v1 environment's reward functions were updated in v1.2.1 without an environment version update. Therefore, use gymnasium-robotics==1.2.0 for v1 reproducibility or use v2 in gymnasium-robotics>=1.4.3. See https://github.com/Farama-Foundation/Gymnasium-Robotics/pull/220 for more details
+>>>> Training STAR method=pointwise_v2 on SafetyPointGoal1-v0
+STAR_CONFIG method=pointwise_v2 run_name=starv2_core_100k_SafetyPointGoal1_v0_selected_pointwise_v2_pointwise_v2_s12 run_dir=/root/FLAC-Safe-star-v2/results/star_v2_final/resume_300k/SafetyPointGoal1-v0/pointwise_v2/starv2_core_100k_SafetyPointGoal1_v0_selected_pointwise_v2_pointwise_v2_s12 eval_interval_steps=10000 eval_times=5 save_interval_steps=50000 recent_fraction=0.0 shadow_aggregation=log_mean_exp shadow_reference_mode=corridor cost_critic_reduce=max star_algorithm_version=star_v2 shadow_beta_mode=positive_linspace shadow_penalty_mode=squared shadow_num_strata=16 shadow_samples_per_stratum=1 training_execution_mode=raw
+Traceback (most recent call last):
+  File "/root/FLAC-Safe-star-v2/main_star.py", line 967, in <module>
+    train_loop(config)
+  File "/root/FLAC-Safe-star-v2/main_star.py", line 776, in train_loop
+    log = agent.update_parameters(memory, config.batch_size, updates, total_steps)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/agents/star_agent.py", line 329, in update_parameters
+    reward_loss = self.update_reward_critic(state, action, reward, next_state, mask)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/agents/sac_base.py", line 143, in update_reward_critic
+    q1_next, q2_next = self.reward_critic_target(next_state, next_action)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/model/model.py", line 57, in forward
+    x2 = self.Q2_block(x2)
+         ^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+            ^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/modules/normalization.py", line 228, in forward
+    return F.layer_norm(
+           ^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/flac/lib/python3.11/site-packages/torch/nn/functional.py", line 2939, in layer_norm
+    return torch.layer_norm(
+           ^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

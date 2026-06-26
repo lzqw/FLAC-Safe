@@ -1,0 +1,26 @@
+AdroitHandRelocateDense-v1, AdroitHandHammerDense-v1, AdroitHandDoorDense-v1 environment's reward functions were updated in v1.2.1 without an environment version update. Therefore, use gymnasium-robotics==1.2.0 for v1 reproducibility or use v2 in gymnasium-robotics>=1.4.3. See https://github.com/Farama-Foundation/Gymnasium-Robotics/pull/220 for more details
+AdroitHandRelocateDense-v1, AdroitHandHammerDense-v1, AdroitHandDoorDense-v1 environment's reward functions were updated in v1.2.1 without an environment version update. Therefore, use gymnasium-robotics==1.2.0 for v1 reproducibility or use v2 in gymnasium-robotics>=1.4.3. See https://github.com/Farama-Foundation/Gymnasium-Robotics/pull/220 for more details
+>>>> Training STAR method=pointwise_v2 on SafetyPointGoal1-v0
+STAR_CONFIG method=pointwise_v2 run_name=starv2_core_100k_SafetyPointGoal1_v0_selected_pointwise_v2_pointwise_v2_s11 run_dir=/root/FLAC-Safe-star-v2/results/star_v2_final/resume_300k/SafetyPointGoal1-v0/pointwise_v2/starv2_core_100k_SafetyPointGoal1_v0_selected_pointwise_v2_pointwise_v2_s11 eval_interval_steps=10000 eval_times=5 save_interval_steps=50000 recent_fraction=0.0 shadow_aggregation=log_mean_exp shadow_reference_mode=corridor cost_critic_reduce=max star_algorithm_version=star_v2 shadow_beta_mode=positive_linspace shadow_penalty_mode=squared shadow_num_strata=16 shadow_samples_per_stratum=1 training_execution_mode=raw
+Traceback (most recent call last):
+  File "/root/FLAC-Safe-star-v2/main_star.py", line 967, in <module>
+    train_loop(config)
+  File "/root/FLAC-Safe-star-v2/main_star.py", line 776, in train_loop
+    log = agent.update_parameters(memory, config.batch_size, updates, total_steps)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/agents/star_agent.py", line 337, in update_parameters
+    log.update(self.update_actor(state))
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/agents/star_agent.py", line 212, in update_actor
+    sac_loss, sac_info = self.sac_actor_loss(state)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/agents/sac_base.py", line 171, in sac_actor_loss
+    action, log_pi, _ = self.policy.sample(state)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/agents/gaussian_policy.py", line 78, in sample
+    mean_action = self.squash(mean)
+                  ^^^^^^^^^^^^^^^^^
+  File "/root/FLAC-Safe-star-v2/agents/gaussian_policy.py", line 59, in squash
+    return torch.max(torch.min(action, self.action_high), self.action_low)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
