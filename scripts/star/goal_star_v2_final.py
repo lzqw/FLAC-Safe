@@ -845,6 +845,122 @@ def ablation(args: argparse.Namespace) -> int:
     return launch_specs(ablation_specs(), dry_run=bool(args.dry_run), max_submit=int(args.max_parallel))
 
 
+def mechanism(args: argparse.Namespace) -> int:
+    """Summarize paired corridor-vs-current-only diagnostics from mechanism.csv.
+
+    Training already records the paired audit statistics with shared Gaussian
+    base noise. This command turns those per-run traces into the final report
+    artifacts required by the STAR-v2 pipeline.
+    """
+
+    ensure_dirs()
+    root = Path(args.root)
+    out_dir = REPORT_ROOT / "mechanism"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows: list[dict] = []
+    age_rows: list[dict] = []
+    for mech_path in sorted(root.glob("*/*/*/mechanism.csv")):
+        rel = mech_path.relative_to(root)
+        task, method, run_name = rel.parts[:3]
+        with mech_path.open(newline="", errors="ignore") as handle:
+            reader = csv.DictReader(handle)
+            mech_rows = list(reader)
+        if not mech_rows:
+            continue
+        for row in mech_rows:
+            lift = row.get("paired_corridor_risk_lift", row.get("star/paired_corridor_risk_lift", ""))
+            try:
+                lift_value = float(lift)
+            except (TypeError, ValueError):
+                lift_value = 0.0
+            out = {
+                "task": task,
+                "method": method,
+                "run_name": run_name,
+                "step": row.get("step", ""),
+                "rho_corridor": row.get("paired_corridor_risk", row.get("star/paired_corridor_risk", "")),
+                "rho_current": row.get("paired_current_risk", row.get("star/paired_current_risk", "")),
+                "corridor_risk_lift": lift,
+                "lift_positive_rate": 1.0 if lift_value > 0 else 0.0,
+                "effective_beta": row.get("effective_beta", ""),
+                "shadow_excess": row.get("shadow_excess_mean", row.get("star/shadow_excess_mean", "")),
+                "reference_age": row.get("reference_age", row.get("star/reference_age", "")),
+            }
+            rows.append(out)
+        final = mech_rows[-1]
+        age_rows.append(
+            {
+                "task": task,
+                "method": method,
+                "run_name": run_name,
+                "final_step": final.get("step", ""),
+                "reference_age": final.get("reference_age", final.get("star/reference_age", "")),
+                "reference_age_pre_update": final.get(
+                    "reference_age_pre_update", final.get("star/reference_age_pre_update", "")
+                ),
+                "reference_age_post_update": final.get(
+                    "reference_age_post_update", final.get("star/reference_age_post_update", "")
+                ),
+            }
+        )
+    fields = [
+        "task",
+        "method",
+        "run_name",
+        "step",
+        "rho_corridor",
+        "rho_current",
+        "corridor_risk_lift",
+        "lift_positive_rate",
+        "effective_beta",
+        "shadow_excess",
+        "reference_age",
+    ]
+    with (out_dir / "corridor_mechanism.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    age_fields = [
+        "task",
+        "method",
+        "run_name",
+        "final_step",
+        "reference_age",
+        "reference_age_pre_update",
+        "reference_age_post_update",
+    ]
+    with (out_dir / "reference_age_summary.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=age_fields)
+        writer.writeheader()
+        writer.writerows(age_rows)
+    positive = [float(row["lift_positive_rate"]) for row in rows]
+    lift_values = []
+    for row in rows:
+        try:
+            lift_values.append(float(row["corridor_risk_lift"]))
+        except (TypeError, ValueError):
+            pass
+    mean_lift = sum(lift_values) / len(lift_values) if lift_values else 0.0
+    mean_positive = sum(positive) / len(positive) if positive else 0.0
+    (out_dir / "mechanism_summary.md").write_text(
+        "\n".join(
+            [
+                "# STAR-v2 Mechanism Summary",
+                "",
+                f"- root: `{root}`",
+                f"- mechanism_rows: `{len(rows)}`",
+                f"- runs_with_mechanism: `{len(age_rows)}`",
+                f"- mean_corridor_risk_lift: `{mean_lift:.6g}`",
+                f"- lift_positive_rate: `{mean_positive:.6g}`",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    print(f"mechanism_rows={len(rows)} out_dir={out_dir}")
+    return 0
+
+
 def executor(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
@@ -944,6 +1060,8 @@ def main(argv: list[str] | None = None) -> int:
     ablation_parser = sub.add_parser("ablation")
     ablation_parser.add_argument("--dry-run", action="store_true")
     ablation_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    mechanism_parser = sub.add_parser("mechanism")
+    mechanism_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
     executor_parser = sub.add_parser("executor")
     executor_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
     executor_parser.add_argument("--eval-seeds", default="700000,700001,700002,700003,700004,700005,700006,700007,700008,700009")
@@ -981,6 +1099,8 @@ def main(argv: list[str] | None = None) -> int:
         return gate_core_100k(args)
     if args.command == "ablation":
         return ablation(args)
+    if args.command == "mechanism":
+        return mechanism(args)
     if args.command == "executor":
         return executor(args)
     if args.command == "paper":
