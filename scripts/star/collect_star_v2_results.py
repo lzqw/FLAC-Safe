@@ -307,9 +307,13 @@ def main() -> int:
     parser.add_argument("--root", default="results/star_v2_final")
     parser.add_argument("--log-root", default="logs/star_v2_final")
     parser.add_argument("--report-dir", default="reports/star_v2_final")
-    parser.add_argument("--phase", choices=["core_100k", "resume_300k", "ablation_100k", "all"], default="all")
+    parser.add_argument("--phase", choices=["core_100k", "resume_300k", "final300k", "ablation_100k", "all"], default="all")
     parser.add_argument("--strict", action="store_true")
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        print(f"warning: ignoring compatibility arguments: {' '.join(unknown)}")
+    if args.phase == "final300k":
+        args.phase = "resume_300k"
     root = Path(args.root)
     log_root = Path(args.log_root)
     report = Path(args.report_dir)

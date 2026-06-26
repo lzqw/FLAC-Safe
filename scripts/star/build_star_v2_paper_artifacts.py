@@ -321,7 +321,10 @@ def write_figures(fig_dir: Path, summary: list[dict], comparisons: list[dict]) -
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--report-dir', default='reports/star_v2_final')
-    args = parser.parse_args()
+    parser.add_argument('--strict', action='store_true')
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        print(f"warning: ignoring compatibility arguments: {' '.join(unknown)}")
     report_dir = Path(args.report_dir)
     manifest = read_csv(report_dir / 'run_manifest.csv')
     summary = grouped_summary(manifest)
