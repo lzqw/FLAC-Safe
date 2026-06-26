@@ -342,6 +342,8 @@ def core_100k_specs() -> list[RunSpec]:
 
 def resume_300k_specs() -> list[RunSpec]:
     specs: list[RunSpec] = []
+    # Seeds 10-12 continue from the core-100k checkpoints. Seeds 13-14 are
+    # independent fresh 300k runs, matching the final STAR-v2 protocol.
     for core in core_100k_specs():
         checkpoint = core.final_checkpoint
         specs.append(
@@ -362,50 +364,67 @@ def resume_300k_specs() -> list[RunSpec]:
                 ),
             )
         )
+    tasks = final_tasks()
+    methods = ["pointwise_v2", "current_only_v2", "sac_lag", "star_v2"]
+    index = len(specs)
+    for task in tasks:
+        for method in methods:
+            for seed in [13, 14]:
+                if method == "star_v2":
+                    overrides = actor_overrides()
+                    config_name = "selected_star_v2"
+                else:
+                    overrides = baseline_method_overrides(method)
+                    config_name = f"selected_{method}"
+                specs.append(
+                    RunSpec(
+                        "resume_300k",
+                        task,
+                        method,
+                        seed,
+                        300000,
+                        config_name,
+                        index % 2,
+                        overrides=overrides
+                        + (
+                            ("save_training_state", True),
+                            ("save_interval_steps", 50000),
+                            ("mechanism_log_interval_steps", 5000),
+                            ("metric_log_interval_steps", 5000),
+                            ("audit_diagnostic_interval", 100),
+                        ),
+                    )
+                )
+                index += 1
     return specs
 
 
 def ablation_specs() -> list[RunSpec]:
-    """STAR-v2 design ablations on development tasks.
+    """Compact 2x2 STAR-v2 design ablation.
 
-    This intentionally uses a compact one-seed, 100k screen. The variants cover
-    the paper-critical design dimensions; only variants that pass this screen
-    should be expanded later.
+    The final protocol compares the endpoint-grid fix and squared-penalty fix
+    only, on development tasks with seeds 20/21/22.
     """
 
     tasks = development_tasks()
-    seeds = [20]
-    base = dict(actor_overrides())
+    seeds = [20, 21, 22]
     configs: list[tuple[str, tuple[tuple[str, object], ...]]] = [
-        ("agg_mean", (("shadow_aggregation", "mean"),)),
-        ("agg_log_mean_exp", (("shadow_aggregation", "log_mean_exp"),)),
-        ("agg_max", (("shadow_aggregation", "max"),)),
-        ("k1", (("shadow_num_strata", 1), ("shadow_samples_per_stratum", 1))),
-        ("k4", (("shadow_num_strata", 4), ("shadow_samples_per_stratum", 1))),
-        ("k8", (("shadow_num_strata", 8), ("shadow_samples_per_stratum", 1))),
-        ("k16", (("shadow_num_strata", 16), ("shadow_samples_per_stratum", 1))),
-        ("k32", (("shadow_num_strata", 32), ("shadow_samples_per_stratum", 1))),
-        ("current_only", (("shadow_reference_mode", "current_only"),)),
-        ("corridor", (("shadow_reference_mode", "corridor"),)),
-        ("ref_interval5", (("star_ref_update_interval", 5),)),
-        ("ref_interval20", (("star_ref_update_interval", 20),)),
-        ("ref_interval100", (("star_ref_update_interval", 100),)),
-        ("kl_off", (("star_use_kl", False), ("star_kl_coef", 0.0))),
-        ("kl_on", (("star_use_kl", True), ("star_kl_coef", base.get("star_kl_coef", 1.0))),
+        (
+            "original_legacy_linear",
+            (("shadow_beta_mode", "legacy_endpoints"), ("star_shadow_penalty_mode", "linear")),
         ),
-        ("actor_audit_only", (("method", "star_v2"), ("star_exec", False), ("training_execution_mode", "raw"))),
-        ("candidate_execution_only", (("method", "star_collect_v2"), ("star_lambda", 0.0), ("star_exec", True))),
-        ("full_star", (("method", "star_v2"),)),
-        ("mean_twin_cost", (("cost_critic_reduce", "mean"),)),
-        ("max_twin_cost", (("cost_critic_reduce", "max"),)),
-        ("temp001", (("shadow_temperature", 0.01),)),
-        ("temp003", (("shadow_temperature", 0.03),)),
-        ("temp005", (("shadow_temperature", 0.05),)),
-        ("temp010", (("shadow_temperature", 0.10),)),
-        ("margin000", (("star_exec_margin", 0.0),)),
-        ("margin001", (("star_exec_margin", 0.01),)),
-        ("margin002", (("star_exec_margin", 0.02),)),
-        ("margin005", (("star_exec_margin", 0.05),)),
+        (
+            "endpoint_fix_positive_linear",
+            (("shadow_beta_mode", "positive_linspace"), ("star_shadow_penalty_mode", "linear")),
+        ),
+        (
+            "penalty_fix_legacy_squared",
+            (("shadow_beta_mode", "legacy_endpoints"), ("star_shadow_penalty_mode", "squared")),
+        ),
+        (
+            "star_v2_positive_squared",
+            (("shadow_beta_mode", "positive_linspace"), ("star_shadow_penalty_mode", "squared")),
+        ),
     ]
     specs: list[RunSpec] = []
     index = 0
@@ -695,6 +714,111 @@ def collect(args: argparse.Namespace) -> int:
     return int(subprocess.run(cmd, cwd=REPO).returncode)
 
 
+def gate_core_100k(args: argparse.Namespace) -> int:
+    """Write the non-blocking core-100k gate report.
+
+    The storage-override protocol treats this as a reporting checkpoint only;
+    downstream phases must continue unless there is a real technical failure.
+    """
+
+    ensure_dirs()
+    specs = core_100k_specs()
+    out_dir = REPORT_ROOT / "core_100k"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sessions = set(tmux_sessions())
+    missing_rows = []
+    completed = 0
+    eval_ready = 0
+    running = 0
+    failed = 0
+    for spec in specs:
+        checkpoint_exists = spec.final_checkpoint.exists()
+        eval_exists = (spec.result_dir / "corrected_eval_episodes.csv").exists()
+        log_exists = spec.log_path.exists()
+        has_error = False
+        if log_exists:
+            text = spec.log_path.read_text(errors="ignore")
+            error_terms = [
+                "Traceback",
+                "RuntimeError",
+                "CUDA out of memory",
+                "out of memory",
+                "NaN",
+                "nan",
+                "Segmentation fault",
+                "MuJoCo",
+                "No space left",
+                "unrecognized arguments",
+            ]
+            has_error = any(term in text for term in error_terms)
+        if checkpoint_exists:
+            completed += 1
+        if checkpoint_exists and eval_exists and not has_error:
+            eval_ready += 1
+        if spec.run_name in sessions:
+            running += 1
+        if has_error:
+            failed += 1
+        if not (checkpoint_exists and eval_exists and not has_error):
+            missing_rows.append(
+                {
+                    "task": spec.task,
+                    "method": spec.method,
+                    "seed": spec.seed,
+                    "checkpoint": checkpoint_exists,
+                    "eval": eval_exists,
+                    "running": spec.run_name in sessions,
+                    "has_error": has_error,
+                    "run_name": spec.run_name,
+                }
+            )
+    expected = len(specs)
+    if failed:
+        label = "TECHNICAL_ISSUES"
+    elif eval_ready == expected:
+        label = "PASS"
+    elif completed == expected:
+        label = "TRAINING_COMPLETE_EVAL_PENDING"
+    else:
+        label = "INCOMPLETE"
+    gate_path = out_dir / "gate.md"
+    gate_path.write_text(
+        "\n".join(
+            [
+                "# STAR-v2 Core-100k Gate",
+                "",
+                f"- label: `{label}`",
+                f"- expected_runs: `{expected}`",
+                f"- completed_training: `{completed}`",
+                f"- completed_eval: `{eval_ready}`",
+                f"- running: `{running}`",
+                f"- failed_or_error_logs: `{failed}`",
+                "",
+                "This gate is a reporting checkpoint only under the storage override.",
+                "The pipeline should continue unless there is a fatal technical failure.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    missing_path = out_dir / "missing_results.md"
+    lines = ["# STAR-v2 Core-100k Missing Results", ""]
+    if not missing_rows:
+        lines.append("No missing core-100k results.")
+    else:
+        lines.append("| Task | Method | Seed | Checkpoint | Eval | Running | Error | Run |")
+        lines.append("| --- | --- | ---: | --- | --- | --- | --- | --- |")
+        for row in missing_rows:
+            lines.append(
+                "| {task} | {method} | {seed} | {checkpoint} | {eval} | {running} | {has_error} | `{run_name}` |".format(
+                    **row
+                )
+            )
+    missing_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"gate_label={label} gate={gate_path} missing={missing_path}")
+    return 0
+
+
 def eval_core(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
@@ -816,6 +940,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     eval_core_alias_parser.add_argument("--overwrite-derived", action="store_true")
     eval_core_alias_parser.add_argument("--dry-run", action="store_true")
+    sub.add_parser("gate-core-100k")
     ablation_parser = sub.add_parser("ablation")
     ablation_parser.add_argument("--dry-run", action="store_true")
     ablation_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
@@ -852,6 +977,8 @@ def main(argv: list[str] | None = None) -> int:
         return collect(args)
     if args.command in ("eval-core", "eval-core-100k"):
         return eval_core(args)
+    if args.command == "gate-core-100k":
+        return gate_core_100k(args)
     if args.command == "ablation":
         return ablation(args)
     if args.command == "executor":
