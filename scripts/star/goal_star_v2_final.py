@@ -59,6 +59,15 @@ class RunSpec:
 
     @property
     def result_dir(self) -> Path:
+        # Resume-300k runs for seeds 10-12 intentionally continue in the
+        # original core-100k run directory under the resume_300k root.  The
+        # tmux/log run_name remains the resume spec name, so completion checks
+        # must use resume_run_dir when present; otherwise the scheduler will
+        # relaunch an already completed resumed run.
+        override_map = dict(self.overrides)
+        resume_run_dir = override_map.get("resume_run_dir")
+        if resume_run_dir:
+            return Path(str(resume_run_dir))
         return RESULT_ROOT / self.phase / self.task / self.method / self.run_name
 
     @property
@@ -511,8 +520,11 @@ def launch_specs(specs: list[RunSpec], *, dry_run: bool, max_submit: int) -> int
     # the experiment parallelism. Supervisor, evaluator, and recovery tmux
     # sessions may also use the starv2_ prefix, but they are not training runs
     # from this specs list and should not permanently consume training slots.
-    spec_run_names = {spec.run_name for spec in specs}
-    starv2_running = [name for name in sessions if name in spec_run_names]
+    # Stale tmux sessions for already completed runs should not consume
+    # training slots.  This matters for resume_300k because completed sessions
+    # can remain attached after final.torch is written.
+    incomplete_run_names = {spec.run_name for spec in specs if not spec.final_checkpoint.exists()}
+    starv2_running = [name for name in sessions if name in incomplete_run_names]
     remaining_slots = max(0, int(max_submit) - len(starv2_running))
     submitted = 0
     for spec in specs:
