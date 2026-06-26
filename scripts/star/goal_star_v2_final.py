@@ -1015,6 +1015,20 @@ def not_yet(command: str) -> int:
     return 2
 
 
+def add_storage_policy_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--storage-policy",
+        choices=["unblocked", "warn-only", "default"],
+        default="unblocked",
+        help="Compatibility option; unblocked/warn-only storage policy never stops scheduling on soft free-space thresholds.",
+    )
+    parser.add_argument(
+        "--ignore-storage-gate",
+        action="store_true",
+        help="Compatibility option; bypasses legacy free-space gates. Actual write failures still surface normally.",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="STAR-v2 final experiment orchestrator")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1022,24 +1036,30 @@ def main(argv: list[str] | None = None) -> int:
     smoke_parser = sub.add_parser("smoke")
     smoke_parser.add_argument("--dry-run", action="store_true")
     smoke_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    add_storage_policy_args(smoke_parser)
     calibrate_parser = sub.add_parser("calibrate")
     calibrate_parser.add_argument("--grid", choices=["star", "baseline", "all"], default="all")
     calibrate_parser.add_argument("--dry-run", action="store_true")
     calibrate_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    add_storage_policy_args(calibrate_parser)
     core_parser = sub.add_parser("core-100k")
     core_parser.add_argument("--dry-run", action="store_true")
     core_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     core_parser.add_argument("--resume", action="store_true", help="compatibility no-op; completed runs are always skipped")
+    add_storage_policy_args(core_parser)
     plan_core_parser = sub.add_parser("plan-core-100k")
     plan_core_parser.add_argument("--output", type=Path, default=REPORT_ROOT / "recovery" / "core100k_resume_plan.csv")
+    add_storage_policy_args(plan_core_parser)
     resume_parser = sub.add_parser("resume-300k")
     resume_parser.add_argument("--dry-run", action="store_true")
     resume_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     resume_parser.add_argument("--resume", action="store_true", help="compatibility no-op; completed runs are always skipped")
+    add_storage_policy_args(resume_parser)
     final_parser = sub.add_parser("final-300k")
     final_parser.add_argument("--dry-run", action="store_true")
     final_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     final_parser.add_argument("--resume", action="store_true", help="compatibility no-op; completed runs are always skipped")
+    add_storage_policy_args(final_parser)
     sub.add_parser("status")
     oracle_parser = sub.add_parser("oracle")
     oracle_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
@@ -1048,10 +1068,12 @@ def main(argv: list[str] | None = None) -> int:
     oracle_parser.add_argument("--max-states-per-run", type=int, default=200)
     oracle_parser.add_argument("--methods", default="star_v2")
     oracle_parser.add_argument("--dry-run", action="store_true")
+    add_storage_policy_args(oracle_parser)
     collect_parser = sub.add_parser("collect")
     collect_parser.add_argument("--phase", choices=["core_100k", "resume_300k", "ablation_100k", "all"], default="all")
     collect_parser.add_argument("--strict", action="store_true")
     collect_parser.add_argument("--dry-run", action="store_true")
+    add_storage_policy_args(collect_parser)
     eval_core_parser = sub.add_parser("eval-core")
     eval_core_parser.add_argument(
         "--eval-seeds",
@@ -1059,6 +1081,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     eval_core_parser.add_argument("--overwrite-derived", action="store_true")
     eval_core_parser.add_argument("--dry-run", action="store_true")
+    add_storage_policy_args(eval_core_parser)
     eval_core_alias_parser = sub.add_parser("eval-core-100k")
     eval_core_alias_parser.add_argument(
         "--eval-seeds",
@@ -1066,12 +1089,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     eval_core_alias_parser.add_argument("--overwrite-derived", action="store_true")
     eval_core_alias_parser.add_argument("--dry-run", action="store_true")
-    sub.add_parser("gate-core-100k")
+    add_storage_policy_args(eval_core_alias_parser)
+    gate_parser = sub.add_parser("gate-core-100k")
+    add_storage_policy_args(gate_parser)
     ablation_parser = sub.add_parser("ablation")
     ablation_parser.add_argument("--dry-run", action="store_true")
     ablation_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
+    add_storage_policy_args(ablation_parser)
     mechanism_parser = sub.add_parser("mechanism")
     mechanism_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
+    add_storage_policy_args(mechanism_parser)
     executor_parser = sub.add_parser("executor")
     executor_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
     executor_parser.add_argument("--eval-seeds", default="700000,700001,700002,700003,700004,700005,700006,700007,700008,700009")
@@ -1079,8 +1106,10 @@ def main(argv: list[str] | None = None) -> int:
     executor_parser.add_argument("--margins", default="0.00,0.02,0.05")
     executor_parser.add_argument("--methods", default="star_v2,star_collect_v2")
     executor_parser.add_argument("--dry-run", action="store_true")
+    add_storage_policy_args(executor_parser)
     paper_parser = sub.add_parser("paper")
     paper_parser.add_argument("--dry-run", action="store_true")
+    add_storage_policy_args(paper_parser)
     args, unknown = parser.parse_known_args(argv)
     if unknown:
         ignored = " ".join(unknown)

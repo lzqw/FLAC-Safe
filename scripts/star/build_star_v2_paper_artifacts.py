@@ -322,6 +322,17 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--report-dir', default='reports/star_v2_final')
     parser.add_argument('--strict', action='store_true')
+    parser.add_argument(
+        '--storage-policy',
+        choices=['unblocked', 'warn-only', 'default'],
+        default='unblocked',
+        help='Compatibility option; paper artifact generation does not enforce storage free-space gates.',
+    )
+    parser.add_argument(
+        '--ignore-storage-gate',
+        action='store_true',
+        help='Compatibility option; accepted for unblocked STAR-v2 pipeline runs.',
+    )
     args, unknown = parser.parse_known_args()
     if unknown:
         print(f"warning: ignoring compatibility arguments: {' '.join(unknown)}")
