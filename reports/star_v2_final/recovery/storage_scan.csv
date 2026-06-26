@@ -1,0 +1,37 @@
+path,writable,avail_gb,fs_type,suitable_for_star_v2,note
+/,True,3.8,overlay,False,
+/autodl-pub,False,932.4,xfs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/.starv2_write_test_4359'
+/autodl-pub/data,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/.starv2_write_test_4359'
+/dev,True,0.1,tmpfs,False,
+/dev/shm,True,80.0,tmpfs,False,
+/usr/bin/nvidia-smi,False,77.6,ext4,False,NotADirectoryError:[Errno 20] Not a directory: '/usr/bin/nvidia-smi/.starv2_write_test_4359'
+/proc/driver/nvidia,False,503.8,tmpfs,False,PermissionError:[Errno 13] Permission denied: '/proc/driver/nvidia/.starv2_write_test_4359'
+/etc/nvidia/nvidia-application-profiles-rc.d,True,503.8,tmpfs,False,
+/proc/asound,False,503.8,tmpfs,False,OSError:[Errno 30] Read-only file system: '/proc/asound/.starv2_write_test_4359'
+/proc/acpi,False,503.8,tmpfs,False,OSError:[Errno 30] Read-only file system: '/proc/acpi/.starv2_write_test_4359'
+/proc/scsi,False,503.8,tmpfs,False,OSError:[Errno 30] Read-only file system: '/proc/scsi/.starv2_write_test_4359'
+/sys/firmware,False,503.8,tmpfs,False,OSError:[Errno 30] Read-only file system: '/sys/firmware/.starv2_write_test_4359'
+/root/autodl-tmp,True,50.0,xfs,False,
+/tmp,True,3.8,overlay,False,
+/root,True,3.8,overlay,False,
+/autodl-pub/data/.sys,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/.sys/.starv2_write_test_4359'
+/autodl-pub/data/ADEChallengeData2016,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/ADEChallengeData2016/.starv2_write_test_4359'
+/autodl-pub/data/Aishell,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/Aishell/.starv2_write_test_4359'
+/autodl-pub/data/BERT-Pretrain-Model,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/BERT-Pretrain-Model/.starv2_write_test_4359'
+/autodl-pub/data/CASIAWebFace,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/CASIAWebFace/.starv2_write_test_4359'
+/autodl-pub/data/VOCdevkit,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/VOCdevkit/.starv2_write_test_4359'
+/autodl-pub/data/COCO2017,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/COCO2017/.starv2_write_test_4359'
+/autodl-pub/data/CelebA,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/CelebA/.starv2_write_test_4359'
+/autodl-pub/data/ImageNet,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/ImageNet/.starv2_write_test_4359'
+/autodl-pub/data/waymo_open_dataset_motion_v_1_1_0,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/waymo_open_dataset_motion_v_1_1_0/.starv2_write_test_4359'
+/autodl-pub/data/ImageNet100,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/ImageNet100/.starv2_write_test_4359'
+/autodl-pub/data/SemanticKITTI,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/SemanticKITTI/.starv2_write_test_4359'
+/autodl-pub/data/DIV2K,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/DIV2K/.starv2_write_test_4359'
+/autodl-pub/data/nuScenes,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/nuScenes/.starv2_write_test_4359'
+/autodl-pub/data/cityscapes,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/cityscapes/.starv2_write_test_4359'
+/autodl-pub/data/CUB200-2011,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/CUB200-2011/.starv2_write_test_4359'
+/autodl-pub/data/CULane,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/CULane/.starv2_write_test_4359'
+/autodl-pub/data/DOTA,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/DOTA/.starv2_write_test_4359'
+/autodl-pub/data/KITTI_Object,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/KITTI_Object/.starv2_write_test_4359'
+/autodl-pub/data/cifar-100,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/cifar-100/.starv2_write_test_4359'
+/autodl-pub/data/GOT10k,False,1442.6,fuse.autofs,False,OSError:[Errno 30] Read-only file system: '/autodl-pub/data/GOT10k/.starv2_write_test_4359'
