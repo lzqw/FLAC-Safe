@@ -1,0 +1,8 @@
+artifact,source_csv,phase,task,method,ablation_name
+paired_comparisons.csv,run_manifest.csv,core_100k,paired,STAR-Actor raw vs Pointwise raw,
+paired_comparisons.csv,run_manifest.csv,core_100k,paired,STAR-Actor raw vs SAC-Lag-local raw,
+paired_comparisons.csv,run_manifest.csv,core_100k,paired,Full STAR raw vs filtered,
+paired_comparisons.csv,run_manifest.csv,ablation_100k,paired,Full STAR vs STAR-Exec,
+paired_comparisons.csv,run_manifest.csv,ablation_100k,paired,corridor vs current-only,
+paired_comparisons.csv,run_manifest.csv,ablation_100k,paired,log-mean-exp vs mean,
+paired_comparisons.csv,run_manifest.csv,ablation_100k,paired,log-mean-exp vs max,

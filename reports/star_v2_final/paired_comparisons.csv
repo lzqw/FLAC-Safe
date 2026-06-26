@@ -1,0 +1,8 @@
+comparison,phase,metric,direction,n_pairs,mean_diff_left_minus_right,sample_std_diff,bootstrap95_ci_low,bootstrap95_ci_high,supported_direction,source_pairs
+STAR-Actor raw vs Pointwise raw,core_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+STAR-Actor raw vs SAC-Lag-local raw,core_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+Full STAR raw vs filtered,core_100k,cost,lower,0,nan,nan,nan,nan,False,
+Full STAR vs STAR-Exec,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+corridor vs current-only,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+log-mean-exp vs mean,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,
+log-mean-exp vs max,ablation_100k,raw_cost_mean,lower,0,nan,nan,nan,nan,False,

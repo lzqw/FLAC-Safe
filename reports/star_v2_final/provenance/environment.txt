@@ -1,0 +1,38 @@
+git_sha=f85f711b7558109b101c25c93f5e93de6d729a73
+branch=codex/star-v2-aaai-final
+date=2026-06-25T11:24:08+08:00
+python3=Python 3.10.12
+torch=unavailable:ModuleNotFoundError:No module named 'torch'
+safety_gymnasium=unavailable:ModuleNotFoundError:No module named 'safety_gymnasium'
+gymnasium=unavailable:ModuleNotFoundError:No module named 'gymnasium'
+mujoco=unavailable:ModuleNotFoundError:No module named 'mujoco'
+cpu_count=224
+platform=Linux-5.15.0-94-generic-x86_64-with-glibc2.35
+--- nvidia-smi ---
+Thu Jun 25 11:24:08 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.105.08             Driver Version: 580.105.08     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 4090 D      On  |   00000000:A9:00.0 Off |                  Off |
+|  0%   33C    P8             11W /  425W |       0MiB /  24564MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA GeForce RTX 4090 D      On  |   00000000:B8:00.0 Off |                  Off |
+| 30%   36C    P8             12W /  425W |       0MiB /  24564MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+--- disk ---
+Filesystem     Type     Size  Used Avail Use% Mounted on
+overlay        overlay   30G   27G  3.8G  88% /
