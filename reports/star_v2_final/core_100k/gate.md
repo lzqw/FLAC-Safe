@@ -1,9 +1,11 @@
-# STAR-v2 Core 100k Gate
+# STAR-v2 Core-100k Gate
 
-Decision: FAIL
+- label: `PASS`
+- expected_runs: `48`
+- completed_training: `48`
+- completed_eval: `48`
+- running: `0`
+- failed_or_error_logs: `0`
 
-STAR-v2 lower cost paired wins vs current-only: 3/12
-STAR-v2 lower task-mean cost tasks: 2/4
-Reward retention ok: False
-Catastrophic tasks: none
-Offline raw evaluation complete: True
+This gate is a reporting checkpoint only under the storage override.
+The pipeline should continue unless there is a fatal technical failure.

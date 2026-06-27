@@ -169,7 +169,7 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
         "eval": False,
         "save": True,
         "save_training_state": True,
-        "save_interval_steps": 50000 if spec.steps >= 50000 else spec.steps,
+        "save_interval_steps": 0,
         "disable_wandb": True,
         "online_eval_mode": "none",
     }
@@ -238,7 +238,7 @@ def calibration_star_specs() -> list[RunSpec]:
                             ("shadow_reference_mode", "corridor"),
                             ("star_shadow_penalty_mode", "squared"),
                             ("cost_gamma", 0.95),
-                            ("save_interval_steps", 50000),
+                            ("save_interval_steps", 0),
                             ("mechanism_log_interval_steps", 5000),
                             ("metric_log_interval_steps", 5000),
                             ("audit_diagnostic_interval", 100),
@@ -275,7 +275,7 @@ def calibration_baseline_specs() -> list[RunSpec]:
                         ("star_lambda", 0.5),
                         ("star_shadow_penalty_mode", "squared"),
                         ("cost_gamma", 0.95),
-                        ("save_interval_steps", 50000),
+                        ("save_interval_steps", 0),
                         ("mechanism_log_interval_steps", 5000),
                         ("metric_log_interval_steps", 5000),
                         ("audit_diagnostic_interval", 100),
@@ -338,7 +338,7 @@ def core_100k_specs() -> list[RunSpec]:
                         index % 2,
                         overrides=overrides
                         + (
-                            ("save_interval_steps", 50000),
+                            ("save_interval_steps", 0),
                             ("mechanism_log_interval_steps", 5000),
                             ("metric_log_interval_steps", 5000),
                             ("audit_diagnostic_interval", 100),
@@ -369,7 +369,7 @@ def resume_300k_specs() -> list[RunSpec]:
                     ("resume_checkpoint", str(checkpoint)),
                     ("resume_run_dir", str(RESULT_ROOT / "resume_300k" / core.task / core.method / core.run_name)),
                     ("save_training_state", True),
-                    ("save_interval_steps", 50000),
+                    ("save_interval_steps", 0),
                 ),
             )
         )
@@ -397,7 +397,7 @@ def resume_300k_specs() -> list[RunSpec]:
                         overrides=overrides
                         + (
                             ("save_training_state", True),
-                            ("save_interval_steps", 50000),
+                            ("save_interval_steps", 0),
                             ("mechanism_log_interval_steps", 5000),
                             ("metric_log_interval_steps", 5000),
                             ("audit_diagnostic_interval", 100),
@@ -455,7 +455,7 @@ def ablation_specs() -> list[RunSpec]:
                         + (
                             ("ablation_group", "ablation_100k"),
                             ("ablation_name", config_name),
-                            ("save_interval_steps", 50000),
+                            ("save_interval_steps", 0),
                             ("mechanism_log_interval_steps", 5000),
                             ("metric_log_interval_steps", 5000),
                             ("audit_diagnostic_interval", 100),
@@ -606,8 +606,8 @@ def plan_core_100k(args: argparse.Namespace) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     sessions = set(tmux_sessions())
     fields = [
-        "task", "method", "seed", "expected_dir", "status",
-        "checkpoint_exists", "eval_exists", "log_exists", "has_error", "action",
+        "task", "method", "seed", "run_dir", "status",
+        "checkpoint_exists", "eval_exists", "log_exists", "has_error", "recommended_action",
     ]
     rows = []
     for spec in specs:
@@ -643,13 +643,13 @@ def plan_core_100k(args: argparse.Namespace) -> int:
             "task": spec.task,
             "method": spec.method,
             "seed": spec.seed,
-            "expected_dir": str(spec.result_dir),
+            "run_dir": str(spec.result_dir),
             "status": status_value,
             "checkpoint_exists": checkpoint_exists,
             "eval_exists": eval_exists,
             "log_exists": log_exists,
             "has_error": has_error,
-            "action": action,
+            "recommended_action": action,
         })
     tmp = output.with_suffix(output.suffix + ".tmp")
     with tmp.open("w", newline="") as handle:
@@ -836,6 +836,28 @@ def eval_core(args: argparse.Namespace) -> int:
         "scripts/star/reevaluate_checkpoints.py",
         "--root",
         str(RESULT_ROOT / "core_100k"),
+        "--eval-seeds",
+        str(args.eval_seeds),
+        "--checkpoint-selector",
+        "final",
+        "--modes",
+        "raw",
+    ]
+    if args.overwrite_derived:
+        cmd.append("--overwrite-derived")
+    print(" ".join(shlex.quote(part) for part in cmd))
+    if args.dry_run:
+        return 0
+    return int(subprocess.run(cmd, cwd=REPO).returncode)
+
+
+def eval_final_300k(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    cmd = [
+        "python",
+        "scripts/star/reevaluate_checkpoints.py",
+        "--root",
+        str(RESULT_ROOT / "resume_300k"),
         "--eval-seeds",
         str(args.eval_seeds),
         "--checkpoint-selector",
@@ -1060,7 +1082,8 @@ def main(argv: list[str] | None = None) -> int:
     final_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
     final_parser.add_argument("--resume", action="store_true", help="compatibility no-op; completed runs are always skipped")
     add_storage_policy_args(final_parser)
-    sub.add_parser("status")
+    status_parser = sub.add_parser("status")
+    add_storage_policy_args(status_parser)
     oracle_parser = sub.add_parser("oracle")
     oracle_parser.add_argument("--root", type=Path, default=RESULT_ROOT / "resume_300k")
     oracle_parser.add_argument("--eval-seeds", default="900000,900001,900002,900003,900004")
@@ -1090,6 +1113,14 @@ def main(argv: list[str] | None = None) -> int:
     eval_core_alias_parser.add_argument("--overwrite-derived", action="store_true")
     eval_core_alias_parser.add_argument("--dry-run", action="store_true")
     add_storage_policy_args(eval_core_alias_parser)
+    eval_final_parser = sub.add_parser("eval-final-300k")
+    eval_final_parser.add_argument(
+        "--eval-seeds",
+        default="600000,600001,600002,600003,600004,600005,600006,600007,600008,600009,600010,600011,600012,600013,600014,600015,600016,600017,600018,600019",
+    )
+    eval_final_parser.add_argument("--overwrite-derived", action="store_true")
+    eval_final_parser.add_argument("--dry-run", action="store_true")
+    add_storage_policy_args(eval_final_parser)
     gate_parser = sub.add_parser("gate-core-100k")
     add_storage_policy_args(gate_parser)
     ablation_parser = sub.add_parser("ablation")
@@ -1134,6 +1165,8 @@ def main(argv: list[str] | None = None) -> int:
         return collect(args)
     if args.command in ("eval-core", "eval-core-100k"):
         return eval_core(args)
+    if args.command == "eval-final-300k":
+        return eval_final_300k(args)
     if args.command == "gate-core-100k":
         return gate_core_100k(args)
     if args.command == "ablation":

@@ -1,0 +1,8 @@
+reports/star_v2_final/recovery/current_ssh_endpoint.md:7:ssh -p 13335 root@connect.cqa1.seetacloud.com
+./docs/remote_seeta_4090.md:10:Host seeta-flacsafe
+./docs/remote_seeta_4090.md:11:    HostName connect.cqa1.seetacloud.com
+./docs/remote_seeta_4090.md:22:ssh seeta-flacsafe
+./docs/remote_seeta_4090.md:143:ssh seeta-flacsafe
+./docs/remote_seeta_4090.md:170:ssh seeta-flacsafe
+./reports/star_v2_final/recovery/current_ssh_endpoint.md:7:ssh -p 13335 root@connect.cqa1.seetacloud.com
+./reports/star_v2_final/recovery/old_endpoint_references.txt:1:reports/star_v2_final/recovery/current_ssh_endpoint.md:7:ssh -p 13335 root@connect.cqa1.seetacloud.com
