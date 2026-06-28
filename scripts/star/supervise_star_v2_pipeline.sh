@@ -44,6 +44,11 @@ print(f"{done}/{len(specs)}")
 PY
 }
 
+count_eval_csv() {
+  local root="$1"
+  find "$root" -type f -name corrected_eval_episodes.csv 2>/dev/null | wc -l
+}
+
 wait_for_phase() {
   local label="$1"
   local command="$2"
@@ -75,15 +80,23 @@ git rev-parse HEAD
 wait_for_phase "core-100k" "core-100k" "core_100k_specs" 600
 
 log "core-100k eval/collect/gate"
-python scripts/star/goal_star_v2_final.py eval-core-100k --storage-policy unblocked --ignore-storage-gate
-python scripts/star/goal_star_v2_final.py collect --phase core_100k --strict --storage-policy unblocked --ignore-storage-gate || true
-python scripts/star/collect_star_v2_results.py --strict || true
-python scripts/star/goal_star_v2_final.py gate-core-100k --storage-policy unblocked --ignore-storage-gate || true
+if [[ "$(count_eval_csv results/star_v2_final/core_100k)" -ge 48 && -f reports/star_v2_final/core_100k/gate.md ]]; then
+  log "core-100k eval/gate already complete; skipping"
+else
+  python scripts/star/goal_star_v2_final.py eval-core-100k --storage-policy unblocked --ignore-storage-gate
+  python scripts/star/goal_star_v2_final.py collect --phase core_100k --strict --storage-policy unblocked --ignore-storage-gate || true
+  python scripts/star/collect_star_v2_results.py --strict || true
+  python scripts/star/goal_star_v2_final.py gate-core-100k --storage-policy unblocked --ignore-storage-gate || true
+fi
 
 wait_for_phase "final-300k" "final-300k" "resume_300k_specs" 600
 
 log "final-300k eval"
-python scripts/star/goal_star_v2_final.py eval-final-300k --storage-policy unblocked --ignore-storage-gate
+if [[ "$(count_eval_csv results/star_v2_final/resume_300k)" -ge 80 ]]; then
+  log "final-300k eval already complete; skipping"
+else
+  python scripts/star/goal_star_v2_final.py eval-final-300k --storage-policy unblocked --ignore-storage-gate
+fi
 
 log "final-300k collect"
 python scripts/star/goal_star_v2_final.py collect --phase resume_300k --strict --storage-policy unblocked --ignore-storage-gate || true

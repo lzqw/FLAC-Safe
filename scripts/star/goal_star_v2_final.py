@@ -606,7 +606,7 @@ def plan_core_100k(args: argparse.Namespace) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     sessions = set(tmux_sessions())
     fields = [
-        "task", "method", "seed", "run_dir", "status",
+        "phase", "task", "method", "seed", "run_dir", "status",
         "checkpoint_exists", "eval_exists", "log_exists", "has_error", "recommended_action",
     ]
     rows = []
@@ -640,6 +640,7 @@ def plan_core_100k(args: argparse.Namespace) -> int:
             status_value = "PENDING"
             action = "relaunch_training"
         rows.append({
+            "phase": spec.phase,
             "task": spec.task,
             "method": spec.method,
             "seed": spec.seed,
@@ -658,6 +659,143 @@ def plan_core_100k(args: argparse.Namespace) -> int:
         writer.writerows(rows)
     tmp.replace(output)
     print(f"plan_rows={len(rows)} output={output}")
+    return 0
+
+
+def _spec_plan_rows(specs: list[RunSpec], sessions: set[str]) -> list[dict]:
+    rows: list[dict] = []
+    for spec in specs:
+        log_exists = spec.log_path.exists()
+        has_error = False
+        if log_exists:
+            log_text = spec.log_path.read_text(errors="ignore")
+            error_terms = [
+                "Traceback",
+                "RuntimeError",
+                "CUDA out of memory",
+                "out of memory",
+                "Segmentation fault",
+                "No space left",
+                "unrecognized arguments",
+            ]
+            has_error = any(term in log_text for term in error_terms)
+        checkpoint_exists = spec.final_checkpoint.exists()
+        eval_exists = (spec.result_dir / "corrected_eval_episodes.csv").exists()
+        if spec.run_name in sessions:
+            status_value = "RUNNING"
+            action = "skip"
+        elif checkpoint_exists and eval_exists and not has_error:
+            status_value = "COMPLETED_TRAINING_AND_EVAL"
+            action = "skip"
+        elif checkpoint_exists and not has_error:
+            status_value = "COMPLETED_TRAINING_NEEDS_EVAL"
+            action = "eval_only"
+        elif has_error:
+            status_value = "FAILED"
+            action = "manual_investigation"
+        else:
+            status_value = "PENDING"
+            action = "resume_training"
+        rows.append(
+            {
+                "phase": spec.phase,
+                "task": spec.task,
+                "method": spec.method,
+                "seed": spec.seed,
+                "run_dir": str(spec.result_dir),
+                "status": status_value,
+                "checkpoint_exists": checkpoint_exists,
+                "eval_exists": eval_exists,
+                "log_exists": log_exists,
+                "has_error": has_error,
+                "recommended_action": action,
+            }
+        )
+    return rows
+
+
+def _artifact_row(phase: str, path: Path, *, required: bool = True) -> dict:
+    exists = path.exists()
+    return {
+        "phase": phase,
+        "task": "",
+        "method": "",
+        "seed": "",
+        "run_dir": str(path),
+        "status": "COMPLETED_TRAINING" if exists else ("PENDING" if required else "NOT_YET_REACHED"),
+        "checkpoint_exists": "",
+        "eval_exists": exists,
+        "log_exists": "",
+        "has_error": False,
+        "recommended_action": "skip" if exists else "run_phase",
+    }
+
+
+def plan_all(args: argparse.Namespace) -> int:
+    ensure_dirs()
+    output = Path(getattr(args, "output", REPORT_ROOT / "recovery" / "full_resume_plan.csv"))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    sessions = set(tmux_sessions())
+    fields = [
+        "phase",
+        "task",
+        "method",
+        "seed",
+        "run_dir",
+        "status",
+        "checkpoint_exists",
+        "eval_exists",
+        "log_exists",
+        "has_error",
+        "recommended_action",
+    ]
+    rows: list[dict] = []
+    rows.extend(_spec_plan_rows(core_100k_specs(), sessions))
+    rows.append(_artifact_row("core_gate", REPORT_ROOT / "core_100k" / "gate.md"))
+    rows.extend(_spec_plan_rows(resume_300k_specs(), sessions))
+    rows.append(_artifact_row("final_collect", REPORT_ROOT / "main_results_summary.csv"))
+    for rel in [
+        "mechanism/corridor_mechanism.csv",
+        "mechanism/reference_age_summary.csv",
+        "mechanism/mechanism_summary.md",
+        "oracle/oracle_status.md",
+    ]:
+        rows.append(_artifact_row(rel.split("/", 1)[0], REPORT_ROOT / rel))
+    rows.extend(_spec_plan_rows(ablation_specs(), sessions))
+    for rel in [
+        "ablation/ablation_by_seed.csv",
+        "ablation/ablation_summary.csv",
+        "ablation/ablation_summary.md",
+        "executor/executor_grid_validation.csv",
+        "executor/executor_confirmation.csv",
+        "executor/selection.md",
+        "executor/confirmation.md",
+        "latex/table_main_results.tex",
+        "latex/table_ablation_executor.tex",
+        "figures/fig_mechanism_validation.pdf",
+        "figures/fig_mechanism_validation.png",
+        "figures/fig_mechanism_validation.svg",
+        "figures/fig_training_curves.pdf",
+        "figures/fig_training_curves.png",
+        "figures/fig_training_curves.svg",
+        "figures/captions.md",
+        "latex/result_macros.tex",
+        "final_claims.md",
+        "final_audit.md",
+        "README.md",
+    ]:
+        rows.append(_artifact_row("paper_artifact", REPORT_ROOT / rel))
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    with tmp.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    tmp.replace(output)
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row["status"])
+        counts[key] = counts.get(key, 0) + 1
+    print(f"plan_rows={len(rows)} output={output} status_counts={counts}")
     return 0
 
 
@@ -1072,6 +1210,9 @@ def main(argv: list[str] | None = None) -> int:
     plan_core_parser = sub.add_parser("plan-core-100k")
     plan_core_parser.add_argument("--output", type=Path, default=REPORT_ROOT / "recovery" / "core100k_resume_plan.csv")
     add_storage_policy_args(plan_core_parser)
+    plan_all_parser = sub.add_parser("plan-all")
+    plan_all_parser.add_argument("--output", type=Path, default=REPORT_ROOT / "recovery" / "full_resume_plan.csv")
+    add_storage_policy_args(plan_all_parser)
     resume_parser = sub.add_parser("resume-300k")
     resume_parser.add_argument("--dry-run", action="store_true")
     resume_parser.add_argument("--max-parallel", type=int, default=sum(GPU_SLOTS.values()))
@@ -1157,6 +1298,8 @@ def main(argv: list[str] | None = None) -> int:
         return core_100k(args)
     if args.command == "plan-core-100k":
         return plan_core_100k(args)
+    if args.command == "plan-all":
+        return plan_all(args)
     if args.command in ("resume-300k", "final-300k"):
         return resume_300k(args)
     if args.command == "oracle":
