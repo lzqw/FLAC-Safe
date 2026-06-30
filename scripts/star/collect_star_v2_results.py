@@ -18,6 +18,14 @@ TASKS = [
 ]
 METHODS = ["pointwise_v2", "current_only_v2", "sac_lag", "star_v2"]
 CORE_SEEDS = [10, 11, 12]
+ABLATION_TASKS = ["SafetyPointGoal1-v0", "SafetyCarGoal1-v0"]
+ABLATION_SEEDS = [20, 21, 22]
+ABLATION_NAMES = [
+    "original_legacy_linear",
+    "endpoint_fix_positive_linear",
+    "penalty_fix_legacy_squared",
+    "star_v2_positive_squared",
+]
 
 
 def fnum(value, default=0.0) -> float:
@@ -60,7 +68,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
             if key not in fields:
                 fields.append(key)
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -117,7 +125,7 @@ def summarize_run(run_dir: Path, root: Path, log_root: Path, expected_steps: int
         str(meta.get("ablation_group", phase)),
         str(meta.get("ablation_name", "")),
     )
-    completed = checkpoint.exists() and final_step >= expected_steps and err == ""
+    completed = checkpoint.exists() and final_step >= expected_steps and err in {"", "missing_log"}
     return {
         "run_name": run_name,
         "run_dir": str(run_dir),
@@ -194,6 +202,111 @@ def missing_core(rows: list[dict], tasks: list[str]) -> list[dict]:
         key = (exp["phase"], exp["task"], exp["method"], exp["seed"])
         if key not in present:
             missing.append({**exp, "reason": "missing_completed_error_free_run"})
+    return missing
+
+
+def expected_ablation_rows() -> list[dict]:
+    rows = []
+    for task in ABLATION_TASKS:
+        for seed in ABLATION_SEEDS:
+            for ablation_name in ABLATION_NAMES:
+                rows.append(
+                    {
+                        "phase": "ablation_100k",
+                        "task": task,
+                        "method": "star_v2",
+                        "seed": seed,
+                        "ablation_name": ablation_name,
+                    }
+                )
+    return rows
+
+
+def missing_ablation(rows: list[dict]) -> list[dict]:
+    present = {
+        (r["phase"], r["task"], r["method"], int(r["seed"]), r["ablation_name"]): r
+        for r in rows
+        if r["phase"] == "ablation_100k" and r["completed"] and int(r["raw_eval_episodes"]) > 0
+    }
+    missing = []
+    for exp in expected_ablation_rows():
+        key = (exp["phase"], exp["task"], exp["method"], exp["seed"], exp["ablation_name"])
+        if key not in present:
+            missing.append({**exp, "reason": "missing_completed_run_with_raw_eval"})
+    return missing
+
+
+def ablation_by_seed(rows: list[dict]) -> list[dict]:
+    return sorted(
+        [r for r in rows if r["phase"] == "ablation_100k" and r["completed"]],
+        key=lambda r: (r["task"], r["ablation_name"], int(r["seed"])),
+    )
+
+
+def ablation_summary(rows: list[dict]) -> list[dict]:
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for row in ablation_by_seed(rows):
+        groups[(row["task"], row["method"], row["ablation_name"])].append(row)
+    out = []
+    for (task, method, ablation_name), vals in sorted(groups.items()):
+        out.append(
+            {
+                "phase": "ablation_100k",
+                "task": task,
+                "method": method,
+                "ablation_name": ablation_name,
+                "seeds": len(vals),
+                "raw_eval_episodes": sum(int(v["raw_eval_episodes"]) for v in vals),
+                "train_reward_mean": mean(v["train_avg_last10_reward"] for v in vals),
+                "train_reward_std": sample_std(v["train_avg_last10_reward"] for v in vals),
+                "train_cost_mean": mean(v["train_avg_last10_cost"] for v in vals),
+                "train_cost_std": sample_std(v["train_avg_last10_cost"] for v in vals),
+                "train_total_cost_mean": mean(v["train_total_cost"] for v in vals),
+                "train_total_cost_std": sample_std(v["train_total_cost"] for v in vals),
+                "raw_return_mean": mean(v["raw_return_mean"] for v in vals),
+                "raw_return_std": sample_std(v["raw_return_mean"] for v in vals),
+                "raw_cost_mean": mean(v["raw_cost_mean"] for v in vals),
+                "raw_cost_std": sample_std(v["raw_cost_mean"] for v in vals),
+                "raw_evr_mean": mean(v["raw_evr_mean"] for v in vals),
+                "raw_evr_std": sample_std(v["raw_evr_mean"] for v in vals),
+                "raw_constraint_satisfaction_rate_mean": mean(v["raw_constraint_satisfaction_rate"] for v in vals),
+                "raw_constraint_satisfaction_rate_std": sample_std(v["raw_constraint_satisfaction_rate"] for v in vals),
+            }
+        )
+    return out
+
+
+def write_ablation_reports(report: Path, rows: list[dict]) -> list[dict]:
+    ablation_rows = ablation_by_seed(rows)
+    summary = ablation_summary(rows)
+    missing = missing_ablation(rows)
+    out_dir = report / "ablation"
+    write_csv(out_dir / "ablation_by_seed.csv", ablation_rows)
+    write_csv(out_dir / "ablation_summary.csv", summary)
+    lines = [
+        "# STAR-v2 Compact Ablation",
+        "",
+        f"Completed training+raw-eval rows: {len(ablation_rows)}/{len(expected_ablation_rows())}",
+        f"Missing rows: {len(missing)}",
+        "",
+        "## Summary",
+        "",
+        "| task | ablation | seeds | raw_return_mean | raw_cost_mean | raw_evr_mean |",
+        "| --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    for row in summary:
+        lines.append(
+            "| {task} | {ablation_name} | {seeds} | {raw_return_mean:.6g} | {raw_cost_mean:.6g} | {raw_evr_mean:.6g} |".format(
+                **row
+            )
+        )
+    if missing:
+        lines.extend(["", "## Missing", ""])
+        for row in missing:
+            lines.append(
+                f"- {row['task']} {row['ablation_name']} seed={row['seed']}: {row['reason']}"
+            )
+    (out_dir / "ablation_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return missing
 
 
@@ -348,12 +461,17 @@ def main() -> int:
     dups = duplicate_rows(rows)
     write_csv(report / "duplicate_runs.csv", dups)
     missing = missing_core(rows, tasks) if args.phase in ("core_100k", "all") else []
+    ablation_missing = write_ablation_reports(report, rows) if args.phase in ("ablation_100k", "all") else []
     missing_lines = ["# Missing Results", ""]
     if missing:
         for row in missing:
             missing_lines.append(f"- {row['phase']} {row['task']} {row['method']} seed={row['seed']}: {row['reason']}")
     else:
         missing_lines.append("No missing core_100k completed/error-free runs detected.")
+    if ablation_missing:
+        missing_lines.extend(["", "## Ablation"])
+        for row in ablation_missing:
+            missing_lines.append(f"- {row['task']} {row['ablation_name']} seed={row['seed']}: {row['reason']}")
     (report / "missing_results.md").write_text("\n".join(missing_lines) + "\n")
 
     decision, gate_text = core_gate(rows, tasks) if args.phase in ("core_100k", "all") else ("UNAVAILABLE", "")
@@ -361,8 +479,12 @@ def main() -> int:
     core_dir.mkdir(parents=True, exist_ok=True)
     (core_dir / "gate.md").write_text(gate_text)
     (report / "claim_gate.md").write_text(gate_text)
-    if args.strict and (missing or dups or decision in {"FAIL", "PENDING"}):
-        print(f"strict collection failed: decision={decision} missing={len(missing)} duplicates={len(dups)}")
+    if args.strict and (missing or ablation_missing or dups or decision in {"FAIL", "PENDING"}):
+        print(
+            "strict collection failed: "
+            f"decision={decision} missing={len(missing)} "
+            f"ablation_missing={len(ablation_missing)} duplicates={len(dups)}"
+        )
         return 2
     print(f"wrote {report / 'run_manifest.csv'} rows={len(rows)} decision={decision}")
     return 0

@@ -18,6 +18,7 @@ REPORT_ROOT = REPO / "reports" / "star_v2_final"
 LOG_ROOT = REPO / "logs" / "star_v2_final"
 RESULT_ROOT = REPO / "results" / "star_v2_final"
 STATUS_PATH = REPORT_ROOT / "scheduler_status.csv"
+PYTHON = sys.executable
 
 GPU_SLOTS = {0: 3, 1: 3}
 THREAD_ENV = {
@@ -191,7 +192,7 @@ def build_main_star_command(spec: RunSpec, extra: dict | None = None) -> list[st
     params.update(spec_overrides)
     if extra:
         params.update(extra)
-    cmd = ["python", "main_star.py"]
+    cmd = [PYTHON, "main_star.py"]
     for key, value in params.items():
         cmd.extend([f"--{key}", str(value)])
     return cmd
@@ -472,8 +473,8 @@ def doctor(args: argparse.Namespace) -> int:
     print(f"git_sha={git_sha()}")
     print(f"branch={run(['git', 'branch', '--show-current']).stdout.strip()}")
     print(run(["git", "status", "--short"]).stdout.strip() or "git_status=clean")
-    print(run(["python", "--version"]).stdout.strip())
-    print(run(["python", "-m", "py_compile", "agents/shadow_audit.py", "agents/star_agent.py", "main_star.py", "utilis/star_default_config.py"]).stdout.strip())
+    print(run([PYTHON, "--version"]).stdout.strip())
+    print(run([PYTHON, "-m", "py_compile", "agents/shadow_audit.py", "agents/star_agent.py", "main_star.py", "utilis/star_default_config.py"]).stdout.strip())
     print(run(["nvidia-smi", "-L"]).stdout.strip())
     for path in [
         "configs/star_v2_selected_actor.json",
@@ -806,7 +807,7 @@ def resume_300k(args: argparse.Namespace) -> int:
 def oracle(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
-        "python",
+        PYTHON,
         "scripts/star/run_shadow_oracle.py",
         "--root",
         str(args.root),
@@ -843,7 +844,7 @@ def oracle(args: argparse.Namespace) -> int:
 def collect(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
-        "python",
+        PYTHON,
         "scripts/star/collect_star_v2_results.py",
         "--root",
         str(RESULT_ROOT),
@@ -970,7 +971,7 @@ def gate_core_100k(args: argparse.Namespace) -> int:
 def eval_core(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
-        "python",
+        PYTHON,
         "scripts/star/reevaluate_checkpoints.py",
         "--root",
         str(RESULT_ROOT / "core_100k"),
@@ -992,7 +993,7 @@ def eval_core(args: argparse.Namespace) -> int:
 def eval_final_300k(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
-        "python",
+        PYTHON,
         "scripts/star/reevaluate_checkpoints.py",
         "--root",
         str(RESULT_ROOT / "resume_300k"),
@@ -1134,7 +1135,7 @@ def mechanism(args: argparse.Namespace) -> int:
 def executor(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
-        "python",
+        PYTHON,
         "scripts/star/evaluate_executor_grid.py",
         "--root",
         str(args.root),
@@ -1158,7 +1159,7 @@ def executor(args: argparse.Namespace) -> int:
 def paper(args: argparse.Namespace) -> int:
     ensure_dirs()
     cmd = [
-        "python",
+        PYTHON,
         "scripts/star/build_star_v2_paper_artifacts.py",
         "--report-dir",
         str(REPORT_ROOT),

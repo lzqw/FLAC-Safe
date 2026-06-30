@@ -1,0 +1,9 @@
+phase,task,method,ablation_name,seeds,raw_return_mean,raw_return_std,raw_cost_mean,raw_cost_std,raw_evr_mean,filtered_return_mean,filtered_return_std,filtered_cost_mean,filtered_cost_std,filtered_evr_mean,train_cost_rate_mean
+ablation_100k,SafetyCarGoal1-v0,star_v2,endpoint_fix_positive_linear,3,33.585750790272776,1.1953267469265028,59.83333333333334,15.829192440972264,0.05983333333333334,nan,nan,nan,nan,nan,0.06400333333333334
+ablation_100k,SafetyCarGoal1-v0,star_v2,original_legacy_linear,3,33.977905022454,1.1478895308713566,55.46666666666667,3.288363321370274,0.05546666666666667,nan,nan,nan,nan,nan,0.07315333333333333
+ablation_100k,SafetyCarGoal1-v0,star_v2,penalty_fix_legacy_squared,3,33.480471652279874,0.4944796266082898,58.1,6.489992295835179,0.058100000000000006,nan,nan,nan,nan,nan,0.05922666666666667
+ablation_100k,SafetyCarGoal1-v0,star_v2,star_v2_positive_squared,3,33.457706958281626,0.4004832933777461,62.93333333333334,8.364408725865406,0.06293333333333333,nan,nan,nan,nan,nan,0.06006
+ablation_100k,SafetyPointGoal1-v0,star_v2,endpoint_fix_positive_linear,3,26.548631300563574,0.7323048289413714,51.03333333333333,9.683663218706718,0.05103333333333334,nan,nan,nan,nan,nan,0.059320000000000005
+ablation_100k,SafetyPointGoal1-v0,star_v2,original_legacy_linear,3,26.110028957586565,0.1555476356071418,54.4,8.869611039949833,0.054400000000000004,nan,nan,nan,nan,nan,0.0598
+ablation_100k,SafetyPointGoal1-v0,star_v2,penalty_fix_legacy_squared,3,26.481871759371852,0.10908217223516384,53.5,2.722131517763241,0.0535,nan,nan,nan,nan,nan,0.059196666666666675
+ablation_100k,SafetyPointGoal1-v0,star_v2,star_v2_positive_squared,3,26.22768119137922,0.48616696709777457,53.333333333333336,5.851780355868917,0.05333333333333334,nan,nan,nan,nan,nan,0.05945

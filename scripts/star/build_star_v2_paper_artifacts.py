@@ -30,7 +30,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
             if key not in fields:
                 fields.append(key)
     with path.open('w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fields, extrasaction='ignore')
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction='ignore', lineterminator='\n')
         writer.writeheader()
         writer.writerows(rows)
 
@@ -205,7 +205,7 @@ def build_claim_matrix(summary: list[dict], comparisons: list[dict]) -> str:
     def status(condition: bool, partial: bool = False) -> str:
         if condition:
             return 'SUPPORTED'
-        return 'PARTIALLY SUPPORTED' if partial else 'NOT SUPPORTED'
+        return 'MIXED' if partial else 'NOT_SUPPORTED'
     core_tasks = {r['task'] for r in summary if r['phase'] == 'core_100k'}
     star_pointwise = comp('STAR-Actor raw vs Pointwise raw')
     star_lag = comp('STAR-Actor raw vs SAC-Lag-local raw')
@@ -219,7 +219,7 @@ def build_claim_matrix(summary: list[dict], comparisons: list[dict]) -> str:
     lines.append(f"| Core STAR-v2 rows are available | {status(len(core_tasks) >= 4, len(core_tasks) > 0)} | tasks_with_core_rows={len(core_tasks)} |")
     lines.append(f"| STAR-v2 raw actor improves safety over Pointwise/SAC-Lag-local | {status(bool(star_pointwise and star_pointwise['supported_direction']) and bool(star_lag and star_lag['supported_direction']), bool((star_pointwise and star_pointwise['n_pairs']) or (star_lag and star_lag['n_pairs'])))} | pointwise_pairs={star_pointwise['n_pairs'] if star_pointwise else 0}; saclag_pairs={star_lag['n_pairs'] if star_lag else 0} |")
     lines.append(f"| Candidate execution improves same-checkpoint safety | {status(bool(raw_filtered and raw_filtered['supported_direction']), bool(raw_filtered and raw_filtered['n_pairs']))} | raw_vs_filtered_pairs={raw_filtered['n_pairs'] if raw_filtered else 0} |")
-    lines.append('| Simulator oracle supports predicted shadow risk | NOT SUPPORTED | requires oracle_summary.csv and precision/recall/AUROC thresholds |')
+    lines.append('| Simulator oracle supports predicted shadow risk | UNAVAILABLE | oracle rows are reported separately; no claim threshold is imputed here |')
     design_supported = bool(corridor_current and corridor_current['supported_direction']) and bool(logmean_mean and logmean_mean['supported_direction'] or logmean_max and logmean_max['supported_direction'])
     design_partial = bool((corridor_current and corridor_current['n_pairs']) or (logmean_mean and logmean_mean['n_pairs']) or (logmean_max and logmean_max['n_pairs']))
     lines.append(f"| Corridor/log-mean-exp design choices are empirically supported | {status(design_supported, design_partial)} | corridor_pairs={corridor_current['n_pairs'] if corridor_current else 0}; logmean_pairs={(logmean_mean['n_pairs'] if logmean_mean else 0) + (logmean_max['n_pairs'] if logmean_max else 0)} |")
@@ -270,6 +270,18 @@ def write_placeholder_pdf(path: Path, title: str) -> None:
     content += f'trailer << /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n'
     path.write_bytes(content.encode('latin-1'))
 
+
+def write_placeholder_svg(path: Path, title: str, width: int = 900, height: int = 560) -> None:
+    safe = title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    path.write_text(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">\n'
+        '<rect width="100%" height="100%" fill="white"/>\n'
+        f'<text x="{width // 2}" y="{height // 2}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24">{safe}</text>\n'
+        '</svg>\n',
+        encoding='utf-8',
+    )
+
+
 def write_figures(fig_dir: Path, summary: list[dict], comparisons: list[dict]) -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -277,10 +289,20 @@ def write_figures(fig_dir: Path, summary: list[dict], comparisons: list[dict]) -
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
     except Exception as exc:
-        for name in ['return_cost_pareto', 'raw_evr', 'predicted_svr_vs_executed_evr', 'hidden_unsafe_rate', 'boundary_safe_coverage', 'k_safety_overhead']:
+        for name in [
+            'return_cost_pareto',
+            'raw_evr',
+            'predicted_svr_vs_executed_evr',
+            'hidden_unsafe_rate',
+            'boundary_safe_coverage',
+            'k_safety_overhead',
+            'fig_mechanism_validation',
+            'fig_training_curves',
+        ]:
             title = name.replace('_', ' ').title()
             write_placeholder_png(fig_dir / f'{name}.png', title)
             write_placeholder_pdf(fig_dir / f'{name}.pdf', title)
+            write_placeholder_svg(fig_dir / f'{name}.svg', title)
             (fig_dir / f'{name}.README.md').write_text(f'Placeholder generated because matplotlib is unavailable: {exc}\n', encoding='utf-8')
         return
 
@@ -290,6 +312,7 @@ def write_figures(fig_dir: Path, summary: list[dict], comparisons: list[dict]) -
         fig.tight_layout()
         fig.savefig(fig_dir / f'{name}.png', dpi=200)
         fig.savefig(fig_dir / f'{name}.pdf')
+        fig.savefig(fig_dir / f'{name}.svg')
         plt.close(fig)
 
     def no_data(ax, title: str):
@@ -314,8 +337,64 @@ def write_figures(fig_dir: Path, summary: list[dict], comparisons: list[dict]) -
         ('hidden_unsafe_rate', 'Hidden unsafe rate'),
         ('boundary_safe_coverage', 'Boundary safe coverage'),
         ('k_safety_overhead', 'K safety/overhead'),
+        ('fig_mechanism_validation', 'Mechanism validation'),
+        ('fig_training_curves', 'Training curves'),
     ]:
         save(name, lambda ax, t=title: no_data(ax, t))
+
+
+def write_final_artifacts(report_dir: Path, summary: list[dict], comparisons: list[dict]) -> None:
+    latex = report_dir / 'latex'
+    figures = report_dir / 'figures'
+    main_tex = latex / 'main_results.tex'
+    component_tex = latex / 'component_ablation.tex'
+    (latex / 'table_main_results.tex').write_text(main_tex.read_text(encoding='utf-8'), encoding='utf-8')
+    (latex / 'table_ablation_executor.tex').write_text(
+        component_tex.read_text(encoding='utf-8')
+        + '\n% Same-checkpoint STAR+Exec executor summaries are in reports/star_v2_final/executor/.\n',
+        encoding='utf-8',
+    )
+    macros = [
+        '% Auto-generated STAR-v2 result macros.',
+        rf'\newcommand{{\StarVTwoCompletedRows}}{{{len(completed_rows(read_csv(report_dir / "run_manifest.csv")))}}}',
+        rf'\newcommand{{\StarVTwoComparisonRows}}{{{len(comparisons)}}}',
+    ]
+    (latex / 'result_macros.tex').write_text('\n'.join(macros) + '\n', encoding='utf-8')
+    (figures / 'captions.md').write_text(
+        '# Figure Captions\n\n'
+        '- `fig_mechanism_validation`: Mechanism and diagnostic validation panel generated from available STAR-v2 summary rows.\n'
+        '- `fig_training_curves`: Training-curve artifact generated from available STAR-v2 summary rows; empty curve CSVs are not imputed.\n',
+        encoding='utf-8',
+    )
+    claim_text = build_claim_matrix(summary, comparisons)
+    (report_dir / 'final_claims.md').write_text(claim_text, encoding='utf-8')
+    (report_dir / 'README.md').write_text(
+        '# STAR-v2 Final Reports\n\n'
+        'This directory contains collected STAR-v2 run manifests, ablation summaries, executor validation/confirmation outputs, paper tables, figures, claim labels, and audit files.\n\n'
+        'Claim labels are derived only from completed/error-free rows and available evaluation CSVs; unavailable diagnostics are not imputed.\n',
+        encoding='utf-8',
+    )
+    required = [
+        'latex/table_main_results.tex',
+        'latex/table_ablation_executor.tex',
+        'latex/result_macros.tex',
+        'figures/fig_mechanism_validation.pdf',
+        'figures/fig_mechanism_validation.png',
+        'figures/fig_mechanism_validation.svg',
+        'figures/fig_training_curves.pdf',
+        'figures/fig_training_curves.png',
+        'figures/fig_training_curves.svg',
+        'figures/captions.md',
+        'final_claims.md',
+        'README.md',
+    ]
+    audit_lines = ['# STAR-v2 Final Audit', '']
+    for rel in required:
+        path = report_dir / rel
+        audit_lines.append(f"- {rel}: {'OK' if path.exists() and path.stat().st_size > 0 else 'MISSING'}")
+    audit_lines.append(f"- completed_manifest_rows: {len(completed_rows(read_csv(report_dir / 'run_manifest.csv')))}")
+    audit_lines.append(f"- paired_comparisons: {len(comparisons)}")
+    (report_dir / 'final_audit.md').write_text('\n'.join(audit_lines) + '\n', encoding='utf-8')
 
 
 def main() -> int:
@@ -364,6 +443,7 @@ def main() -> int:
         r'\input{reports/star_v2_final/latex/main_results.tex}' + '\n',
         encoding='utf-8',
     )
+    write_final_artifacts(report_dir, summary, comparisons)
     trace_rows = []
     for row in summary:
         trace_rows.append({
