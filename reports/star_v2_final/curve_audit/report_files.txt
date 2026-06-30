@@ -12,9 +12,16 @@ reports/star_v2_final/claim_gate.md
 reports/star_v2_final/core_100k/gate.md
 reports/star_v2_final/core_100k/missing_results.md
 reports/star_v2_final/curve_audit/candidate_curve_files.txt
+reports/star_v2_final/curve_audit/curve_extraction_summary.md
 reports/star_v2_final/curve_audit/curve_recovery_state.txt
+reports/star_v2_final/curve_audit/curve_source_inventory.csv
 reports/star_v2_final/curve_audit/report_files.txt
+reports/star_v2_final/curve_audit/used_curve_sources.csv
+reports/star_v2_final/curves/missing_curve_sources.md
+reports/star_v2_final/curves/training_curves_long.csv
 reports/star_v2_final/duplicate_runs.csv
+reports/star_v2_final/efficiency/efficiency_by_seed.csv
+reports/star_v2_final/efficiency/efficiency_summary.csv
 reports/star_v2_final/efficiency_summary.csv
 reports/star_v2_final/executor/confirmation.md
 reports/star_v2_final/executor/executor_confirmation.csv
@@ -24,6 +31,9 @@ reports/star_v2_final/executor/executor_grid_summary.csv
 reports/star_v2_final/executor/executor_grid_validation.csv
 reports/star_v2_final/executor/executor_grid_validation_summary.csv
 reports/star_v2_final/executor/selection.md
+reports/star_v2_final/figures/appendix_training_curves_all_tasks.pdf
+reports/star_v2_final/figures/appendix_training_curves_all_tasks.png
+reports/star_v2_final/figures/appendix_training_curves_all_tasks.svg
 reports/star_v2_final/figures/boundary_safe_coverage.README.md
 reports/star_v2_final/figures/boundary_safe_coverage.pdf
 reports/star_v2_final/figures/boundary_safe_coverage.png
@@ -70,7 +80,10 @@ reports/star_v2_final/latex/table_main_results.tex
 reports/star_v2_final/learning_curves.csv
 reports/star_v2_final/main_results_by_seed.csv
 reports/star_v2_final/main_results_summary.csv
+reports/star_v2_final/mechanism/MECHANISM_REFERENCE_AGE_UNAVAILABLE.md
 reports/star_v2_final/mechanism/corridor_mechanism.csv
+reports/star_v2_final/mechanism/corridor_mechanism_by_age.csv
+reports/star_v2_final/mechanism/corridor_mechanism_summary.csv
 reports/star_v2_final/mechanism/mechanism_summary.md
 reports/star_v2_final/mechanism/reference_age_summary.csv
 reports/star_v2_final/mechanism_curves.csv

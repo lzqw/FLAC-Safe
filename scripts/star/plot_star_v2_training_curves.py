@@ -160,11 +160,27 @@ def append_caption(path: Path, rows: list[dict]) -> None:
         first = "Figure 3 reports available evaluation/training-log return and cumulative training cost over environment steps."
     else:
         first = "Figure 3 reports training-log episode return and cumulative training cost over environment steps."
+    by_seed: dict[tuple[str, str, str], list[float]] = defaultdict(list)
+    for row in rows:
+        if row.get("task") in MAIN_TASKS and row.get("method") in METHODS:
+            by_seed[(row["task"], row["method"], row["seed"])].append(fnum(row.get("step")))
+    partial = [
+        key
+        for key, steps in by_seed.items()
+        if steps and min(step for step in steps if not math.isnan(step)) > 5000
+    ]
+    partial_text = ""
+    if partial:
+        partial_text = (
+            " Some resumed seeds only have per-step resume logs after the 100k checkpoint; "
+            "the mean and uncertainty bands use available seeds at each environment step."
+        )
     text = (
         "\n\n"
         "## Figure 3 Training Curves\n\n"
         f"{first} Seed means are shown with 95% normal-approximation standard-error bands. "
-        "Some seeds may lack per-step curve logs and are excluded from the curve mean; Table 1 uses all completed final evaluations.\n"
+        "No final-summary rows are used to draw the curves."
+        f"{partial_text} Table 1 uses all completed final evaluations.\n"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     old = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""

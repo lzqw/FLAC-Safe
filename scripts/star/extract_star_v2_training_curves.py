@@ -59,6 +59,24 @@ def choose(cols: list[str], preferred: list[str]) -> str:
     return cols[0] if cols else ""
 
 
+def rank_train_source(inv: dict) -> tuple[int, int, str]:
+    name = Path(inv["file_path"]).name
+    return (
+        0 if name == "train_episodes.csv" else 1,
+        0 if inv.get("source_type") == "csv" else 1,
+        inv["file_path"],
+    )
+
+
+def rank_eval_source(inv: dict) -> tuple[int, int, str]:
+    name = Path(inv["file_path"]).name
+    return (
+        0 if name in {"eval_episodes.csv", "corrected_eval_episodes.csv"} else 1,
+        0 if inv.get("source_type") == "csv" else 1,
+        inv["file_path"],
+    )
+
+
 def extract_csv_curve(inv: dict) -> list[dict]:
     path = Path(inv["file_path"])
     rows = read_csv_rows(path)
@@ -97,6 +115,106 @@ def extract_csv_curve(inv: dict) -> list[dict]:
                 "cumulative_cost": cumulative,
                 "source_file": str(path),
                 "source_kind": source_kind,
+            }
+        )
+    return out
+
+
+def extract_training_csv(inv: dict) -> list[dict]:
+    path = Path(inv["file_path"])
+    rows = read_csv_rows(path)
+    if not rows:
+        return []
+    reward_cols = split_cols(inv.get("reward_columns", ""))
+    cost_cols = split_cols(inv.get("cost_columns", ""))
+    step_col = inv.get("step_column", "")
+    reward_col = choose(reward_cols, PREFERRED_REWARD)
+    cost_col = choose([c for c in cost_cols if c not in CUMULATIVE_COST], PREFERRED_COST)
+    cumulative_col = choose([c for c in cost_cols if c in CUMULATIVE_COST], CUMULATIVE_COST)
+    out = []
+    running_cost = 0.0
+    for row in rows:
+        step = fnum(row.get(step_col))
+        if math.isnan(step):
+            continue
+        cost = fnum(row.get(cost_col)) if cost_col else math.nan
+        if cumulative_col:
+            cumulative = fnum(row.get(cumulative_col))
+        else:
+            if not math.isnan(cost):
+                running_cost += cost
+            cumulative = running_cost if running_cost else math.nan
+        out.append(
+            {
+                "phase": inv["phase"],
+                "task": inv["task"],
+                "method": inv["method"],
+                "seed": inv["seed"],
+                "step": int(step),
+                "return_value": fnum(row.get(reward_col)) if reward_col else math.nan,
+                "cost_value": cost,
+                "cumulative_cost": cumulative,
+                "source_file": str(path),
+                "source_kind": "train",
+            }
+        )
+    return out
+
+
+def extract_eval_csv(inv: dict, train_rows: list[dict]) -> list[dict]:
+    path = Path(inv["file_path"])
+    rows = read_csv_rows(path)
+    if not rows:
+        return []
+    step_col = inv.get("step_column", "")
+    reward_col = choose(split_cols(inv.get("reward_columns", "")), PREFERRED_REWARD)
+    cost_col = choose(split_cols(inv.get("cost_columns", "")), PREFERRED_COST)
+    grouped: dict[int, list[dict]] = defaultdict(list)
+    for row in rows:
+        step = fnum(row.get(step_col))
+        if not math.isnan(step):
+            grouped[int(step)].append(row)
+    if len(grouped) < 2:
+        return []
+
+    cost_by_step = []
+    for row in train_rows:
+        step = fnum(row.get("step"))
+        cumulative = fnum(row.get("cumulative_cost"))
+        cost = fnum(row.get("cost_value"))
+        if not math.isnan(step):
+            cost_by_step.append((int(step), cumulative, cost))
+    cost_by_step.sort(key=lambda item: item[0])
+
+    def nearest_training_cost(step: int) -> tuple[float, float]:
+        cumulative = math.nan
+        cost = math.nan
+        for train_step, train_cumulative, train_cost in cost_by_step:
+            if train_step > step:
+                break
+            cumulative = train_cumulative
+            cost = train_cost
+        return cumulative, cost
+
+    out = []
+    for step, step_rows in sorted(grouped.items()):
+        returns = [fnum(row.get(reward_col)) for row in step_rows] if reward_col else []
+        returns = [value for value in returns if not math.isnan(value)]
+        costs = [fnum(row.get(cost_col)) for row in step_rows] if cost_col else []
+        costs = [value for value in costs if not math.isnan(value)]
+        cumulative, train_cost = nearest_training_cost(step)
+        out.append(
+            {
+                "phase": inv["phase"],
+                "task": inv["task"],
+                "method": inv["method"],
+                "seed": inv["seed"],
+                "step": step,
+                "return_value": sum(returns) / len(returns) if returns else math.nan,
+                "cost_value": sum(costs) / len(costs) if costs else train_cost,
+                "cumulative_cost": cumulative,
+                "source_file": f"{path};training_cost={train_rows[0]['source_file'] if train_rows else ''}",
+                "source_kind": "eval",
             }
         )
     return out
@@ -193,7 +311,7 @@ def main() -> int:
     args = parser.parse_args()
 
     inventory = read_csv_rows(Path(args.inventory)) if Path(args.inventory).exists() else []
-    selected_by_run: dict[tuple[str, str, str], dict] = {}
+    sources_by_run: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
     for inv in inventory:
         if inv.get("usable") != "True":
             continue
@@ -202,30 +320,52 @@ def main() -> int:
         if inv.get("task") not in TASKS or inv.get("method") not in METHODS or not inv.get("seed"):
             continue
         key = (inv["task"], inv["method"], inv["seed"])
-        current = selected_by_run.get(key)
-        if current is None:
-            selected_by_run[key] = inv
-            continue
-        # Prefer train_episodes.csv, then CSV, then anything else.
-        old_rank = (Path(current["file_path"]).name != "train_episodes.csv", current.get("source_type") != "csv")
-        new_rank = (Path(inv["file_path"]).name != "train_episodes.csv", inv.get("source_type") != "csv")
-        if new_rank < old_rank:
-            selected_by_run[key] = inv
+        sources_by_run[key].append(inv)
 
     rows = []
     failures = []
-    for key, inv in sorted(selected_by_run.items()):
+    selected_sources = []
+    source_notes = []
+    for key, sources in sorted(sources_by_run.items()):
         try:
-            source_type = inv.get("source_type", "")
-            if source_type == "csv":
-                extracted = extract_csv_curve(inv)
-            elif source_type == "tensorboard":
-                extracted = extract_tensorboard_curve(inv)
+            train_candidates = [
+                inv
+                for inv in sources
+                if Path(inv["file_path"]).name == "train_episodes.csv"
+                or (inv.get("source_type") != "csv" and "train" in Path(inv["file_path"]).name.lower())
+            ]
+            eval_candidates = [
+                inv
+                for inv in sources
+                if Path(inv["file_path"]).name in {"eval_episodes.csv", "corrected_eval_episodes.csv"}
+            ]
+            train_inv = sorted(train_candidates or sources, key=rank_train_source)[0]
+            selected_sources.append(train_inv)
+            if train_inv.get("source_type") == "csv":
+                train_rows = extract_training_csv(train_inv)
+            elif train_inv.get("source_type") == "tensorboard":
+                train_rows = extract_tensorboard_curve(train_inv)
             else:
-                extracted = extract_log_curve(inv)
-            if not extracted:
+                train_rows = extract_log_curve(train_inv)
+            if not train_rows:
                 failures.append((*key, "extracted_zero_rows"))
-            rows.extend(extracted)
+                continue
+
+            periodic_eval_rows = []
+            if eval_candidates:
+                eval_inv = sorted(eval_candidates, key=rank_eval_source)[0]
+                selected_sources.append(eval_inv)
+                if eval_inv.get("source_type") == "csv":
+                    periodic_eval_rows = extract_eval_csv(eval_inv, train_rows)
+                if periodic_eval_rows:
+                    rows.extend(periodic_eval_rows)
+                    source_notes.append((*key, "periodic_eval_return"))
+                else:
+                    rows.extend(train_rows)
+                    source_notes.append((*key, "training_return_eval_file_not_periodic"))
+            else:
+                rows.extend(train_rows)
+                source_notes.append((*key, "training_return_no_eval_curve"))
         except Exception as exc:
             failures.append((*key, f"extract_error:{exc}"))
 
@@ -244,7 +384,7 @@ def main() -> int:
     rows.sort(key=lambda r: (r["task"], r["method"], int(r["seed"]), int(r["step"])))
     write_csv(Path(args.output), rows, fields)
 
-    present = {(task, method, int(seed)) for task, method, seed in selected_by_run}
+    present = {(task, method, int(seed)) for task, method, seed in sources_by_run}
     missing_lines = ["# Missing STAR-v2 Training Curve Sources", ""]
     for task in TASKS:
         for method in METHODS:
@@ -260,25 +400,41 @@ def main() -> int:
 
     grouped = defaultdict(int)
     source_kind = defaultdict(int)
+    ranges: dict[tuple[str, str, str], list[int]] = defaultdict(list)
     for row in rows:
         grouped[(row["task"], row["method"])] += 1
         source_kind[row["source_kind"]] += 1
+        ranges[(row["task"], row["method"], row["seed"])].append(int(row["step"]))
     summary = [
         "# STAR-v2 Curve Extraction Summary",
         "",
         f"- phase: `{args.phase}`",
-        f"- selected_sources: `{len(selected_by_run)}`",
+        f"- selected_sources: `{len(selected_sources)}`",
         f"- extracted_rows: `{len(rows)}`",
         f"- source_kind_counts: `{dict(source_kind)}`",
         "",
-        "## Rows By Task/Method",
+        "## Source Notes",
         "",
     ]
+    for task, method, seed, note in sorted(source_notes):
+        summary.append(f"- {task} {method} seed={seed}: {note}")
+    summary.extend([
+        "",
+        "## Step Ranges",
+        "",
+    ])
+    for (task, method, seed), steps in sorted(ranges.items(), key=lambda item: (item[0][0], item[0][1], int(item[0][2]))):
+        summary.append(f"- {task} {method} seed={seed}: {min(steps)}-{max(steps)} ({len(steps)} rows)")
+    summary.extend([
+        "",
+        "## Rows By Task/Method",
+        "",
+    ])
     for (task, method), count in sorted(grouped.items()):
         summary.append(f"- {task} {method}: {count}")
     Path(args.summary_output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.summary_output).write_text("\n".join(summary) + "\n", encoding="utf-8")
-    print(f"wrote {args.output} rows={len(rows)} sources={len(selected_by_run)}")
+    print(f"wrote {args.output} rows={len(rows)} sources={len(sources_by_run)}")
     return 0
 
 

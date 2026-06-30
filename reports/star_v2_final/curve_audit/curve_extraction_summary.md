@@ -1,9 +1,175 @@
 # STAR-v2 Curve Extraction Summary
 
 - phase: `resume_300k`
-- selected_sources: `80`
+- selected_sources: `160`
 - extracted_rows: `19785`
 - source_kind_counts: `{'train': 19785}`
+
+## Source Notes
+
+- SafetyCarButton1-v0 current_only_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 current_only_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 current_only_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 current_only_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 current_only_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 pointwise_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 pointwise_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 pointwise_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 pointwise_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 pointwise_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 sac_lag seed=10: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 sac_lag seed=11: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 sac_lag seed=12: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 sac_lag seed=13: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 sac_lag seed=14: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 star_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 star_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 star_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 star_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyCarButton1-v0 star_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 current_only_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 current_only_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 current_only_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 current_only_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 current_only_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 pointwise_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 pointwise_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 pointwise_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 pointwise_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 pointwise_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 sac_lag seed=10: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 sac_lag seed=11: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 sac_lag seed=12: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 sac_lag seed=13: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 sac_lag seed=14: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 star_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 star_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 star_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 star_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyCarGoal1-v0 star_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 current_only_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 current_only_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 current_only_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 current_only_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 current_only_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 pointwise_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 pointwise_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 pointwise_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 pointwise_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 pointwise_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 sac_lag seed=10: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 sac_lag seed=11: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 sac_lag seed=12: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 sac_lag seed=13: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 sac_lag seed=14: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 star_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 star_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 star_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 star_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyPointButton1-v0 star_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 current_only_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 current_only_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 current_only_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 current_only_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 current_only_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 pointwise_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 pointwise_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 pointwise_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 pointwise_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 pointwise_v2 seed=14: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 sac_lag seed=10: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 sac_lag seed=11: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 sac_lag seed=12: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 sac_lag seed=13: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 sac_lag seed=14: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 star_v2 seed=10: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 star_v2 seed=11: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 star_v2 seed=12: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 star_v2 seed=13: training_return_eval_file_not_periodic
+- SafetyPointGoal1-v0 star_v2 seed=14: training_return_eval_file_not_periodic
+
+## Step Ranges
+
+- SafetyCarButton1-v0 current_only_v2 seed=10: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 current_only_v2 seed=11: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 current_only_v2 seed=12: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 current_only_v2 seed=13: 1000-300000 (300 rows)
+- SafetyCarButton1-v0 current_only_v2 seed=14: 1000-300000 (300 rows)
+- SafetyCarButton1-v0 pointwise_v2 seed=10: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 pointwise_v2 seed=11: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 pointwise_v2 seed=12: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 pointwise_v2 seed=13: 1000-300000 (300 rows)
+- SafetyCarButton1-v0 pointwise_v2 seed=14: 1000-300000 (300 rows)
+- SafetyCarButton1-v0 sac_lag seed=10: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 sac_lag seed=11: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 sac_lag seed=12: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 sac_lag seed=13: 1000-300000 (300 rows)
+- SafetyCarButton1-v0 sac_lag seed=14: 1000-300000 (300 rows)
+- SafetyCarButton1-v0 star_v2 seed=10: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 star_v2 seed=11: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 star_v2 seed=12: 101000-300000 (200 rows)
+- SafetyCarButton1-v0 star_v2 seed=13: 1000-300000 (300 rows)
+- SafetyCarButton1-v0 star_v2 seed=14: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 current_only_v2 seed=10: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 current_only_v2 seed=11: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 current_only_v2 seed=12: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 current_only_v2 seed=13: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 current_only_v2 seed=14: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 pointwise_v2 seed=10: 101000-300000 (239 rows)
+- SafetyCarGoal1-v0 pointwise_v2 seed=11: 101000-300000 (236 rows)
+- SafetyCarGoal1-v0 pointwise_v2 seed=12: 101000-300000 (223 rows)
+- SafetyCarGoal1-v0 pointwise_v2 seed=13: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 pointwise_v2 seed=14: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 sac_lag seed=10: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 sac_lag seed=11: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 sac_lag seed=12: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 sac_lag seed=13: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 sac_lag seed=14: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 star_v2 seed=10: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 star_v2 seed=11: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 star_v2 seed=12: 101000-300000 (200 rows)
+- SafetyCarGoal1-v0 star_v2 seed=13: 1000-300000 (300 rows)
+- SafetyCarGoal1-v0 star_v2 seed=14: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 current_only_v2 seed=10: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 current_only_v2 seed=11: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 current_only_v2 seed=12: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 current_only_v2 seed=13: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 current_only_v2 seed=14: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 pointwise_v2 seed=10: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 pointwise_v2 seed=11: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 pointwise_v2 seed=12: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 pointwise_v2 seed=13: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 pointwise_v2 seed=14: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 sac_lag seed=10: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 sac_lag seed=11: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 sac_lag seed=12: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 sac_lag seed=13: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 sac_lag seed=14: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 star_v2 seed=10: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 star_v2 seed=11: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 star_v2 seed=12: 101000-300000 (200 rows)
+- SafetyPointButton1-v0 star_v2 seed=13: 1000-300000 (300 rows)
+- SafetyPointButton1-v0 star_v2 seed=14: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 current_only_v2 seed=10: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 current_only_v2 seed=11: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 current_only_v2 seed=12: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 current_only_v2 seed=13: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 current_only_v2 seed=14: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 pointwise_v2 seed=10: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 pointwise_v2 seed=11: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 pointwise_v2 seed=12: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 pointwise_v2 seed=13: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 pointwise_v2 seed=14: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 sac_lag seed=10: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 sac_lag seed=11: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 sac_lag seed=12: 101000-300000 (200 rows)
+- SafetyPointGoal1-v0 sac_lag seed=13: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 sac_lag seed=14: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 star_v2 seed=10: 101000-300000 (366 rows)
+- SafetyPointGoal1-v0 star_v2 seed=11: 101000-300000 (363 rows)
+- SafetyPointGoal1-v0 star_v2 seed=12: 101000-300000 (358 rows)
+- SafetyPointGoal1-v0 star_v2 seed=13: 1000-300000 (300 rows)
+- SafetyPointGoal1-v0 star_v2 seed=14: 1000-300000 (300 rows)
 
 ## Rows By Task/Method
 
