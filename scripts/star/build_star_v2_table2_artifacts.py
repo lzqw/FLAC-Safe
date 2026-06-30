@@ -203,6 +203,12 @@ def build_efficiency(root: Path, report_dir: Path) -> None:
             }
         )
     base = {}
+    executor_rows = read_csv(report_dir / "executor" / "executor_summary.csv")
+    star_exec_latency_by_task = {
+        row.get("task", ""): row.get("latency_ms", "")
+        for row in executor_rows
+        if row.get("task")
+    }
     for task in TASKS:
         point = [r for r in rows if r["task"] == task and r["method"] == "pointwise_v2"]
         current = [r for r in rows if r["task"] == task and r["method"] == "current_only_v2"]
@@ -230,6 +236,7 @@ def build_efficiency(root: Path, report_dir: Path) -> None:
                 "cost_critic_calls_per_env_step_mean": avg(v["cost_critic_calls_per_env_step"] for v in vals),
                 "relative_overhead_vs_pointwise": (base[(task, "pointwise_v2")] / speed if speed else math.nan),
                 "relative_overhead_vs_current_only": (base[(task, "current_only_v2")] / speed if speed else math.nan),
+                "star_exec_latency_ms": star_exec_latency_by_task.get(task, "") if method == "star_v2" else "",
             }
         )
     out_dir = report_dir / "efficiency"
