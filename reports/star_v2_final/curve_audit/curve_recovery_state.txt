@@ -1,0 +1,67 @@
+autodl-container-5f5c489a58-eca64b30
+Tue Jun 30 21:24:28 CST 2026
+codex/star-v2-aaai-final
+5affe3087254e9e65a2fc70d09f0a1626e336c71
+Filesystem      Size  Used Avail Use% Mounted on
+overlay          30G   27G  3.6G  89% /
+/dev/md127      7.0T  6.8T  214G  98% /autodl-pub
+AutoFS:fs1      4.0T  2.6T  1.5T  65% /autodl-pub/data
+tmpfs            64M     0   64M   0% /dev
+shm              90G     0   90G   0% /dev/shm
+/dev/nvme0n1p2  1.8T   16G  1.7T   1% /usr/bin/nvidia-smi
+tmpfs           504G   12K  504G   1% /proc/driver/nvidia
+tmpfs           504G  4.0K  504G   1% /etc/nvidia/nvidia-application-profiles-rc.d
+tmpfs           504G     0  504G   0% /proc/asound
+tmpfs           504G     0  504G   0% /proc/acpi
+tmpfs           504G     0  504G   0% /proc/scsi
+tmpfs           504G     0  504G   0% /sys/firmware
+tmpfs           504G     0  504G   0% /sys/devices/virtual/powercap
+lrwxrwxrwx  1 root root   37 Jun 27 13:21 logs -> /root/autodl-tmp/star_v2_storage/logs
+lrwxrwxrwx  1 root root   40 Jun 27 13:21 results -> /root/autodl-tmp/star_v2_storage/results
+
+reports/star_v2_final:
+total 476K
+drwxr-xr-x 17 root root 4.0K Jun 30 21:24 .
+drwxr-xr-x  6 root root  118 Jun 25 11:23 ..
+-rw-r--r--  1 root root  332 Jun 30 17:41 README.md
+drwxr-xr-x  2 root root  105 Jun 30 17:41 ablation
+-rw-r--r--  1 root root 1.8K Jun 30 17:41 ablation_summary.csv
+drwxr-xr-x  2 root root  176 Jun 25 22:11 calibration
+-rw-r--r--  1 root root  225 Jun 30 17:41 claim_gate.md
+drwxr-xr-x  2 root root   10 Jun 25 11:23 configs
+drwxr-xr-x  2 root root   59 Jun 30 17:41 core_100k
+drwxr-xr-x  2 root root   46 Jun 30 21:24 curve_audit
+drwxr-xr-x  2 root root   10 Jun 30 21:24 curves
+-rw-r--r--  1 root root    0 Jun 30 17:41 duplicate_runs.csv
+-rw-r--r--  1 root root   92 Jun 30 17:41 efficiency_summary.csv
+drwxr-xr-x  2 root root 4.0K Jun 30 16:55 executor
+drwxr-xr-x  2 root root 4.0K Jun 30 17:41 figures
+-rw-r--r--  1 root root  490 Jun 30 17:41 final_audit.md
+-rw-r--r--  1 root root  719 Jun 30 17:41 final_claims.md
+-rw-r--r--  1 root root 4.2K Jun 25 11:35 implementation_alignment.md
+-rw-r--r--  1 root root  956 Jun 25 11:35 implementation_before.md
+drwxr-xr-x  2 root root 4.0K Jun 30 17:41 latex
+-rw-r--r--  1 root root    0 Jun 30 17:41 learning_curves.csv
+-rw-r--r--  1 root root 107K Jun 30 17:41 main_results_by_seed.csv
+-rw-r--r--  1 root root 7.2K Jun 30 17:41 main_results_summary.csv
+drwxr-xr-x  2 root root  113 Jun 30 17:41 mechanism
+-rw-r--r--  1 root root    0 Jun 30 17:41 mechanism_curves.csv
+-rw-r--r--  1 root root   76 Jun 30 17:41 missing_results.md
+drwxr-xr-x  2 root root  186 Jun 30 17:41 oracle
+-rw-r--r--  1 root root 4.7K Jun 30 17:41 paired_comparisons.csv
+-rw-r--r--  1 root root  719 Jun 30 17:41 paper_claim_matrix.md
+drwxr-xr-x  2 root root   90 Jun 25 11:24 provenance
+-rw-r--r--  1 root root 7.6K Jun 30 17:41 raw_vs_filtered.csv
+drwxr-xr-x  3 root root 4.0K Jun 28 17:02 recovery
+-rw-r--r--  1 root root    0 Jun 26 10:05 recovery_checkpoint_files.txt
+-rw-r--r--  1 root root    0 Jun 26 10:05 recovery_eval_files.txt
+-rw-r--r--  1 root root    0 Jun 26 10:05 recovery_log_files.txt
+-rw-r--r--  1 root root    0 Jun 26 10:05 recovery_result_roots.txt
+-rw-r--r--  1 root root 8.6K Jun 30 17:41 result_traceability.csv
+-rw-r--r--  1 root root 107K Jun 30 17:41 run_manifest.csv
+-rw-r--r--  1 root root  35K Jun 30 17:41 scheduler_status.csv
+-rw-r--r--  1 root root 107K Jun 30 17:41 summary_by_seed.csv
+drwxr-xr-x  2 root root   10 Jun 25 11:23 tables
+-rw-r--r--  1 root root  339 Jun 25 16:17 task_selection.md
+drwxr-xr-x  2 root root   65 Jun 25 12:02 tests
+-rw-r--r--  1 root root 9.7K Jun 30 17:41 training_safety_by_seed.csv
