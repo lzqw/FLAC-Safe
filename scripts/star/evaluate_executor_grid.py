@@ -6,6 +6,7 @@ import csv
 import json
 import math
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -38,6 +39,8 @@ FIELDS = [
     "execution_fallback_rate",
     "safe_candidate_fraction",
     "found_but_not_executed_rate",
+    "FNE",
+    "latency_ms",
 ]
 
 SUMMARY_FIELDS = [
@@ -52,6 +55,8 @@ SUMMARY_FIELDS = [
     "raw_evr",
     "filtered_evr",
     "fallback_rate",
+    "FNE",
+    "latency_ms",
     "safe_candidate_fraction",
     "found_but_not_executed_rate",
     "decision",
@@ -122,12 +127,17 @@ def eval_episode(agent: STARAgent, env, config, seed: int, mode: str) -> dict:
     fallbacks = 0
     safe_fraction = 0.0
     found = 0
+    latency_ms_sum = 0.0
     info = {}
     if mode == "star_exec":
         agent.method = "star"
         agent.star_exec = True
+    else:
+        agent.star_exec = False
     while not done and steps < int(config.eval_numsteps):
+        action_t0 = time.perf_counter()
         action = agent.select_action(state, evaluate=True, execution_mode=mode, total_numsteps=int(config.num_steps))
+        latency_ms_sum += (time.perf_counter() - action_t0) * 1000.0
         next_state, reward, cost, terminated, truncated, info = step_env(env, action, config.safe_env)
         details = agent.last_action_info
         reward_sum += reward
@@ -148,6 +158,8 @@ def eval_episode(agent: STARAgent, env, config, seed: int, mode: str) -> dict:
         "execution_fallback_rate": fallbacks / max(1, steps),
         "safe_candidate_fraction": safe_fraction / max(1, steps),
         "found_but_not_executed_rate": found / max(1, steps),
+        "FNE": found / max(1, steps),
+        "latency_ms": latency_ms_sum / max(1, steps),
     }
 
 
@@ -158,6 +170,8 @@ def run_grid(
     candidates_list: list[int],
     margins: list[float],
     methods: set[str],
+    tasks: set[str],
+    train_seeds: set[str],
     output_name: str = "executor_grid.csv",
 ) -> None:
     out_path = report_dir / output_name
@@ -168,30 +182,35 @@ def run_grid(
         meta = read_meta(run_dir)
         if meta.get("method") not in methods:
             continue
+        if tasks and meta.get("task") not in tasks:
+            continue
+        if train_seeds and str(meta.get("seed", "")) not in train_seeds:
+            continue
         checkpoint = final_checkpoint(run_dir)
         if checkpoint is None:
             continue
+        base_config = build_config(meta, candidates_list[0], margins[0])
+        raw_results: dict[int, dict] = {}
+        raw_env = make_env(base_config.task, safe_env=base_config.safe_env, train=False, binary_cost=base_config.binary_cost)
+        try:
+            raw_agent = STARAgent(raw_env.observation_space.shape[0], raw_env.action_space, base_config)
+            raw_agent.load_checkpoint(str(checkpoint))
+            for seed in eval_seeds:
+                raw_results[seed] = eval_episode(raw_agent, raw_env, base_config, seed, "raw")
+        finally:
+            raw_env.close()
+
         for candidates in candidates_list:
             for margin in margins:
                 config = build_config(meta, candidates, margin)
-                for seed in eval_seeds:
+                env = make_env(config.task, safe_env=config.safe_env, train=False, binary_cost=config.binary_cost)
+                try:
+                    agent = STARAgent(env.observation_space.shape[0], env.action_space, config)
+                    agent.load_checkpoint(str(checkpoint))
                     rows = []
-                    raw_result = None
-                    for mode in ("raw", "star_exec"):
-                        env = make_env(config.task, safe_env=config.safe_env, train=False, binary_cost=config.binary_cost)
-                        try:
-                            agent = STARAgent(env.observation_space.shape[0], env.action_space, config)
-                            agent.load_checkpoint(str(checkpoint))
-                            result = eval_episode(agent, env, config, seed, mode)
-                        finally:
-                            env.close()
-                        if mode == "raw":
-                            raw_result = result
-                        drop = math.nan
-                        if raw_result and mode == "star_exec":
-                            denom = max(1e-8, abs(float(raw_result["episode_reward"])))
-                            drop = (float(raw_result["episode_reward"]) - float(result["episode_reward"])) / denom
-                        row = {
+                    for seed in eval_seeds:
+                        raw_result = raw_results[seed]
+                        raw_row = {
                             "run_name": meta.get("run_name", run_dir.name),
                             "task": config.task,
                             "train_seed": meta.get("seed", ""),
@@ -199,12 +218,31 @@ def run_grid(
                             "checkpoint_path": str(checkpoint),
                             "candidates": candidates,
                             "margin": margin,
-                            "mode": mode,
+                            "mode": "raw",
+                            "return_drop_vs_raw": math.nan,
+                        }
+                        raw_row.update(raw_result)
+                        rows.append(raw_row)
+
+                        result = eval_episode(agent, env, config, seed, "star_exec")
+                        denom = max(1e-8, abs(float(raw_result["episode_reward"])))
+                        drop = (float(raw_result["episode_reward"]) - float(result["episode_reward"])) / denom
+                        exec_row = {
+                            "run_name": meta.get("run_name", run_dir.name),
+                            "task": config.task,
+                            "train_seed": meta.get("seed", ""),
+                            "eval_seed": seed,
+                            "checkpoint_path": str(checkpoint),
+                            "candidates": candidates,
+                            "margin": margin,
+                            "mode": "star_exec",
                             "return_drop_vs_raw": drop,
                         }
-                        row.update(result)
-                        rows.append(row)
+                        exec_row.update(result)
+                        rows.append(exec_row)
                     append_csv(out_path, rows, FIELDS)
+                finally:
+                    env.close()
 
 
 def summarize(report_dir: Path, input_name: str = "executor_grid.csv", output_name: str = "executor_grid_summary.csv") -> list[dict]:
@@ -236,10 +274,12 @@ def summarize(report_dir: Path, input_name: str = "executor_grid.csv", output_na
             "raw_evr": mean([float(r["violation_rate"]) for r in raw]) if raw else math.nan,
             "filtered_evr": mean([float(r["violation_rate"]) for r in filt]) if filt else math.nan,
             "fallback_rate": mean([float(r["execution_fallback_rate"]) for r in filt]) if filt else math.nan,
+            "FNE": mean([float(r.get("FNE", r.get("found_but_not_executed_rate", "nan"))) for r in filt]) if filt else math.nan,
+            "latency_ms": mean([float(r.get("latency_ms", "nan")) for r in filt]) if filt else math.nan,
             "safe_candidate_fraction": mean([float(r["safe_candidate_fraction"]) for r in filt]) if filt else math.nan,
             "found_but_not_executed_rate": mean([float(r["found_but_not_executed_rate"]) for r in filt]) if filt else math.nan,
         }
-        ok = row["filtered_evr"] <= row["raw_evr"] and row["filtered_cost"] <= row["raw_cost"] and drop <= 0.20 and row["fallback_rate"] < 0.8
+        ok = row["filtered_evr"] <= row["raw_evr"] and row["filtered_cost"] <= row["raw_cost"] and drop <= 0.05 and row["fallback_rate"] < 0.8
         row["decision"] = "candidate" if ok else "filtered"
         summary.append(row)
     write_csv(report_dir / output_name, summary, SUMMARY_FIELDS)
@@ -260,6 +300,12 @@ def select_global_executor(summary: list[dict]) -> dict | None:
         fallback = mean([float(r["fallback_rate"]) for r in rows])
         raw_cost = mean([float(r["raw_cost"]) for r in rows])
         raw_evr = mean([float(r["raw_evr"]) for r in rows])
+        improved_tasks = sum(
+            1
+            for r in rows
+            if float(r["filtered_cost"]) <= float(r["raw_cost"]) and float(r["filtered_evr"]) <= float(r["raw_evr"])
+        )
+        return_ok = return_drop <= 0.05
         candidates.append(
             {
                 "candidates": int(float(cand)),
@@ -270,9 +316,11 @@ def select_global_executor(summary: list[dict]) -> dict | None:
                 "fallback_rate": fallback,
                 "raw_cost": raw_cost,
                 "raw_evr": raw_evr,
-                # Lexicographic score: safety first, then cost, then reward
-                # retention and fallback rate.
-                "score": (filtered_evr, filtered_cost, max(0.0, return_drop), fallback),
+                "improved_tasks": improved_tasks,
+                "return_drop_ok": return_ok,
+                # Requested criteria: lower average cost, lower EVR, return
+                # drop <= 5%, task-level improvement count, then fallback.
+                "score": (filtered_cost, filtered_evr, not return_ok, -improved_tasks, fallback),
             }
         )
     return sorted(candidates, key=lambda r: r["score"])[0]
@@ -288,7 +336,7 @@ def write_selection(report_dir: Path, selected: dict | None, validation_summary:
     config = {
         "schema": "star_v2_selected_executor",
         "selection_status": "selected",
-        "selection_source": str(report_dir / "executor_grid_validation.csv"),
+        "selection_source": str(report_dir / "executor_validation_grid.csv"),
         "candidate_grid": sorted({int(float(row["candidates"])) for row in validation_summary}),
         "margin_grid": sorted({float(row["margin"]) for row in validation_summary}),
         "selected": {
@@ -308,6 +356,8 @@ def write_selection(report_dir: Path, selected: dict | None, validation_summary:
         f"- validation_filtered_cost: `{selected['filtered_cost']:.6g}`",
         f"- validation_return_drop_frac: `{selected['return_drop_frac']:.6g}`",
         f"- validation_fallback_rate: `{selected['fallback_rate']:.6g}`",
+        f"- validation_improved_tasks: `{selected.get('improved_tasks', 0)}`",
+        f"- validation_return_drop_ok_5pct: `{selected.get('return_drop_ok', False)}`",
         f"- config: `{config_path}`",
         "",
     ]
@@ -339,6 +389,7 @@ def write_confirmation(report_dir: Path, summary: list[dict], selected: dict | N
                     f"- mean_raw_evr: `{mean([float(r['raw_evr']) for r in rows]):.6g}`",
                     f"- mean_filtered_evr: `{mean([float(r['filtered_evr']) for r in rows]):.6g}`",
                     f"- mean_return_drop_frac: `{mean([float(r['return_drop_frac']) for r in rows]):.6g}`",
+                    f"- mean_latency_ms: `{mean([float(r.get('latency_ms', 'nan')) for r in rows]):.6g}`",
                     "",
                 ]
             )
@@ -350,9 +401,14 @@ def main() -> None:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--eval-seeds", default="200000,200001,200002,200003,200004,200005,200006,200007,200008,200009,200010,200011,200012,200013,200014,200015,200016,200017,200018,200019")
     parser.add_argument("--confirmation-seeds", default="800000,800001,800002,800003,800004,800005,800006,800007,800008,800009,800010,800011,800012,800013,800014,800015,800016,800017,800018,800019")
-    parser.add_argument("--candidates", default="8,16")
-    parser.add_argument("--margins", default="0.00,0.02,0.05")
+    parser.add_argument("--candidates", default="8,16,32")
+    parser.add_argument("--margins", default="0.00,0.02,0.05,0.08")
     parser.add_argument("--methods", default="star_v2,star_collect_v2")
+    parser.add_argument("--tasks", default="")
+    parser.add_argument("--train-seeds", default="")
+    parser.add_argument("--stage", choices=("all", "validation", "confirmation"), default="all")
+    parser.add_argument("--selected-candidates", type=int, default=0)
+    parser.add_argument("--selected-margin", type=float, default=math.nan)
     parser.add_argument("--report-dir", type=Path, default=Path("reports/star_goal"))
     parser.add_argument("--dry-run", action="store_true")
     args, unknown = parser.parse_known_args()
@@ -361,22 +417,38 @@ def main() -> None:
     if args.dry_run:
         print("dry_run=true")
         return
-    run_grid(
-        args.root,
-        args.report_dir,
-        parse_seed_list(args.eval_seeds),
-        parse_int_list(args.candidates),
-        parse_float_list(args.margins),
-        parse_str_list(args.methods),
-        output_name="executor_grid_validation.csv",
-    )
-    validation_summary = summarize(
-        args.report_dir,
-        input_name="executor_grid_validation.csv",
-        output_name="executor_grid_validation_summary.csv",
-    )
-    selected = select_global_executor(validation_summary)
-    write_selection(args.report_dir, selected, validation_summary)
+    tasks = parse_str_list(args.tasks)
+    train_seeds = parse_str_list(args.train_seeds)
+    selected = None
+    validation_summary: list[dict] = []
+    if args.stage in {"all", "validation"}:
+        run_grid(
+            args.root,
+            args.report_dir,
+            parse_seed_list(args.eval_seeds),
+            parse_int_list(args.candidates),
+            parse_float_list(args.margins),
+            parse_str_list(args.methods),
+            tasks,
+            train_seeds,
+            output_name="executor_validation_grid.csv",
+        )
+        validation_summary = summarize(
+            args.report_dir,
+            input_name="executor_validation_grid.csv",
+            output_name="executor_validation_grid_summary.csv",
+        )
+        selected = select_global_executor(validation_summary)
+        write_selection(args.report_dir, selected, validation_summary)
+        if args.stage == "validation":
+            print(f"wrote validation shard {args.report_dir / 'executor_validation_grid.csv'}")
+            return
+
+    if args.stage == "confirmation":
+        if args.selected_candidates <= 0 or math.isnan(args.selected_margin):
+            raise SystemExit("--stage confirmation requires --selected-candidates and --selected-margin")
+        selected = {"candidates": args.selected_candidates, "margin": args.selected_margin}
+
     if selected is not None:
         run_grid(
             args.root,
@@ -385,6 +457,8 @@ def main() -> None:
             [int(selected["candidates"])],
             [float(selected["margin"])],
             parse_str_list(args.methods),
+            tasks,
+            train_seeds,
             output_name="executor_confirmation.csv",
         )
     confirmation_summary = summarize(
@@ -394,13 +468,20 @@ def main() -> None:
     )
     write_confirmation(args.report_dir, confirmation_summary, selected)
     # Backward-compatible filenames used by older artifact code.
-    validation_path = args.report_dir / "executor_grid_validation.csv"
+    validation_path = args.report_dir / "executor_validation_grid.csv"
     if validation_path.exists():
+        (args.report_dir / "executor_grid_validation.csv").write_text(validation_path.read_text(), encoding="utf-8")
         (args.report_dir / "executor_grid.csv").write_text(validation_path.read_text(), encoding="utf-8")
-    validation_summary_path = args.report_dir / "executor_grid_validation_summary.csv"
+    validation_summary_path = args.report_dir / "executor_validation_grid_summary.csv"
     if validation_summary_path.exists():
+        (args.report_dir / "executor_grid_validation_summary.csv").write_text(validation_summary_path.read_text(), encoding="utf-8")
         (args.report_dir / "executor_grid_summary.csv").write_text(validation_summary_path.read_text(), encoding="utf-8")
-    print(f"wrote {args.report_dir / 'executor_grid_validation.csv'} and {args.report_dir / 'executor_confirmation.csv'}")
+    if (args.report_dir / "executor_confirmation_summary.csv").exists():
+        (args.report_dir / "executor_summary.csv").write_text(
+            (args.report_dir / "executor_confirmation_summary.csv").read_text(),
+            encoding="utf-8",
+        )
+    print(f"wrote {args.report_dir / 'executor_validation_grid.csv'} and {args.report_dir / 'executor_confirmation.csv'}")
     print(f"wrote {args.report_dir / 'executor_grid_summary.csv'}")
 
 

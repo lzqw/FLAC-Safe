@@ -1,18 +1,20 @@
 {
   "schema": "star_v2_selected_executor",
   "selection_status": "selected",
-  "selection_source": "/root/FLAC-Safe-star-v2/reports/star_v2_final/executor/executor_grid_validation.csv",
+  "selection_source": "reports/star_v2_final/executor/executor_validation_grid.csv",
   "candidate_grid": [
     8,
-    16
+    16,
+    32
   ],
   "margin_grid": [
     0.0,
     0.02,
-    0.05
+    0.05,
+    0.08
   ],
   "selected": {
-    "star_exec_candidates": 16,
+    "star_exec_candidates": 32,
     "star_exec_margin": 0.05
   }
 }

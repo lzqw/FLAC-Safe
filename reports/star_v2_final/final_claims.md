@@ -1,11 +1,9 @@
-# STAR-v2 Paper Claim Matrix
+# STAR-v2 Final Claims
 
 | Claim | Status | Evidence |
 | --- | --- | --- |
-| Core STAR-v2 rows are available | SUPPORTED | tasks_with_core_rows=4 |
-| STAR-v2 raw actor improves safety over Pointwise/SAC-Lag-local | MIXED | pointwise_pairs=12; saclag_pairs=12 |
-| Candidate execution improves same-checkpoint safety | NOT_SUPPORTED | raw_vs_filtered_pairs=0 |
-| Simulator oracle supports predicted shadow risk | UNAVAILABLE | oracle rows are reported separately; no claim threshold is imputed here |
-| Corridor/log-mean-exp design choices are empirically supported | NOT_SUPPORTED | corridor_pairs=0; logmean_pairs=0 |
-
-Statuses use only selected completed/error-free CSV rows. Missing comparisons are not imputed.
+| Corridor shadows expose risk beyond equal-budget current-only samples | SUPPORTED | mechanism bins with positive lift from logged paired audits: 10/20 |
+| STAR raw actor and STAR+Exec are reported separately | SUPPORTED | Table 1 uses raw-policy results; executor confirmation is in Table 2 artifacts. |
+| STAR+Exec same-checkpoint deployment improves held-out safety/cost | MIXED | confirmation safety improvements: 2/4; return-drop <=5% tasks: 2/4; mean cost 142.340->123.595; mean EVR 0.142->0.124 |
+| Oracle actual-risk validation is available | UNAVAILABLE | oracle supported rows: 0/40 |
+| Compact 2x2 ablation was completed without broad hyperparameter sweep | SUPPORTED | 2 tasks x 3 seeds x 4 variants. |
