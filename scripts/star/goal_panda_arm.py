@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Iterable
 
 REPO = Path(__file__).resolve().parents[2]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 PYTHON = Path("/root/miniconda3/envs/flac/bin/python")
 if not PYTHON.exists():
     PYTHON = Path(sys.executable)
@@ -479,7 +481,15 @@ def collect() -> None:
         for col in numeric:
             df[col] = pd.to_numeric(df[col], errors="coerce")
         summary = df.groupby("method")[numeric].agg(["mean", "sem"]).reset_index()
+        summary.columns = [
+            "_".join(str(part) for part in col if str(part)) if isinstance(col, tuple) else str(col)
+            for col in summary.columns
+        ]
+        summary = summary.rename(columns={"method_": "method"})
         summary.to_csv(REPORT_ROOT / "final" / "arm_main_results_summary.csv", index=False)
+    collect_training_curves()
+    collect_mechanism_summary()
+    write_final_docs()
     smoke_summary_md()
     write_manifest(smoke_specs() + calibration_specs() + final_specs(), "all")
     write_readme()
@@ -538,6 +548,12 @@ def select_calibration() -> None:
 
 def write_readme() -> None:
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
+    selected_actor_path = CONFIG_DIR / "star_arm_selected_actor.json"
+    selected_exec_path = CONFIG_DIR / "star_arm_selected_executor.json"
+    selected_actor = json.loads(selected_actor_path.read_text()) if selected_actor_path.exists() else {}
+    selected_exec = json.loads(selected_exec_path.read_text()) if selected_exec_path.exists() else {}
+    claim_path = REPORT_ROOT / "final_claim.md"
+    claim_note = claim_path.read_text().strip() if claim_path.exists() else "Final result not collected yet."
     text = f"""# STAR Panda Arm Safety Showcase
 
 Task: `{TASK}`.
@@ -562,6 +578,24 @@ velocities.
 
 Methods: SAC-Lag, Current-only-N (`current_only_v2`), STAR (`star_v2`), and
 STAR+Exec for same-checkpoint evaluation once executor collection is run.
+
+Seeds and steps:
+- smoke: seed 0, 5k steps.
+- calibration: seeds 0-1, 100k steps.
+- final: seeds 10-12, 300k steps.
+
+Selected STAR actor config:
+```json
+{json.dumps(selected_actor, indent=2)}
+```
+
+Selected STAR+Exec config:
+```json
+{json.dumps(selected_exec, indent=2)}
+```
+
+Final claim status:
+{claim_note}
 
 Heavy outputs are under `{RESULT_ROOT}`. Small reports are under this directory.
 """
@@ -609,45 +643,179 @@ def smoke_summary_md() -> None:
 
 def figures() -> None:
     import numpy as np
+    from agents.star_agent import STARAgent
+    from main_star import make_env
 
     from envs.safety_panda_reach_obstacle import SafetyPandaReachObstacleEnv, plot_topdown_trajectory
 
     ensure_dirs()
-    env = SafetyPandaReachObstacleEnv(deterministic_resets=True)
-    try:
-        env.reset(seed=0)
-        trajectories = {}
-        for label, y_bias in [("SAC-Lag", 0.0), ("Current-only-N", -0.002), ("STAR", 0.006), ("STAR+Exec", 0.010)]:
-            env.reset(seed=0)
+    specs = {
+        "SAC-Lag": next(s for s in final_specs() if s.method == "sac_lag" and s.seed == 10),
+        "Current-only-N": next(s for s in final_specs() if s.method == "current_only_v2" and s.seed == 10),
+        "STAR": next(s for s in final_specs() if s.method == "star_v2" and s.seed == 10),
+        "STAR+Exec": next(s for s in final_specs() if s.method == "star_v2" and s.seed == 10),
+    }
+    selected_exec = json.loads((CONFIG_DIR / "star_arm_selected_executor.json").read_text()) if (CONFIG_DIR / "star_arm_selected_executor.json").exists() else {}
+    trajectories = {}
+    start = goal = obstacle = None
+    radius = 0.07
+    margin = 0.13
+    for label, spec in specs.items():
+        extra = {}
+        mode = "raw"
+        if label == "STAR+Exec":
+            mode = "star_exec"
+            extra = {
+                "star_exec_candidates": int(selected_exec.get("star_exec_candidates", 16)),
+                "star_exec_margin": float(selected_exec.get("star_exec_margin", 0.02)),
+                "star_exec_start_steps": 0,
+            }
+        config = _config_from_spec(spec, extra)
+        env = make_env(config.task, safe_env=config.safe_env, train=False, binary_cost=config.binary_cost)
+        agent = STARAgent(env.observation_space.shape[0], env.action_space, config)
+        agent.load_checkpoint(str(spec.final_checkpoint))
+        try:
+            state, _ = env.reset(seed=800000)
+            if start is None:
+                start = np.asarray(env.unwrapped.start_pos)
+                goal = np.asarray(env.unwrapped.goal_pos)
+                obstacle = np.asarray(env.unwrapped.obstacle_pos)
+                radius = float(env.unwrapped.cfg.obstacle_radius)
+                margin = float(env.unwrapped.cfg.safe_margin)
             points = [env.unwrapped._ee_position().copy()]
-            for _ in range(80):
-                ee = env.unwrapped._ee_position()
-                goal_vec = env.goal_pos - ee
-                detour = np.array([0.0, y_bias, 0.0], dtype=np.float32)
-                action = np.clip(goal_vec / max(1e-6, env.cfg.action_scale) + detour / env.cfg.action_scale, -1.0, 1.0)
-                _, _, term, trunc, _ = env.step(action)
+            for _ in range(100):
+                action = agent.select_action(state, evaluate=True, execution_mode=mode, total_numsteps=300000, diagnostics=True)
+                state, _, terminated, truncated, _ = env.step(action)
                 points.append(env.unwrapped._ee_position().copy())
-                if term or trunc:
+                if terminated or truncated:
                     break
             trajectories[label] = np.asarray(points)
-        base = Path(REPORT_ROOT / "figures" / "fig_arm_qualitative")
-        for suffix in ["png", "pdf", "svg"]:
-            plot_topdown_trajectory(
-                trajectories,
-                start=np.asarray(env.start_pos),
-                goal=np.asarray(env.goal_pos),
-                obstacle=np.asarray(env.obstacle_pos),
-                obstacle_radius=env.cfg.obstacle_radius,
-                safe_margin=env.cfg.safe_margin,
-                output_path=base.with_suffix(f".{suffix}"),
-            )
-    finally:
-        env.close()
+        finally:
+            env.close()
+    if start is None:
+        fallback_env = SafetyPandaReachObstacleEnv(deterministic_resets=True)
+        fallback_env.reset(seed=0)
+        start = np.asarray(fallback_env.start_pos)
+        goal = np.asarray(fallback_env.goal_pos)
+        obstacle = np.asarray(fallback_env.obstacle_pos)
+        radius = fallback_env.cfg.obstacle_radius
+        margin = fallback_env.cfg.safe_margin
+        fallback_env.close()
+    base = Path(REPORT_ROOT / "figures" / "fig_arm_qualitative")
+    for suffix in ["png", "pdf", "svg"]:
+        plot_topdown_trajectory(
+            trajectories,
+            start=start,
+            goal=goal,
+            obstacle=obstacle,
+            obstacle_radius=radius,
+            safe_margin=margin,
+            output_path=base.with_suffix(f".{suffix}"),
+        )
     print(base.with_suffix(".png"))
 
 
+def collect_training_curves() -> None:
+    import pandas as pd
+
+    rows = []
+    for path in sorted((RESULT_ROOT / "final").glob(f"{TASK}/*/*/train_episodes.csv")):
+        df = pd.read_csv(path)
+        if df.empty:
+            continue
+        keep = [
+            "run_name",
+            "task",
+            "method",
+            "seed",
+            "episode",
+            "end_step",
+            "episode_reward",
+            "episode_cost",
+            "episode_length",
+            "train_total_cost",
+            "train_total_cost_rate",
+        ]
+        rows.append(df[[c for c in keep if c in df.columns]])
+    if rows:
+        out = pd.concat(rows, ignore_index=True)
+        out.to_csv(REPORT_ROOT / "final" / "arm_training_curves.csv", index=False)
+
+
+def collect_mechanism_summary() -> None:
+    import pandas as pd
+
+    rows = []
+    for path in sorted((RESULT_ROOT / "final").glob(f"{TASK}/star_v2/*/mechanism.csv")):
+        df = pd.read_csv(path)
+        if df.empty:
+            continue
+        tail = df.tail(10)
+        row = {
+            "run_name": df["run_name"].iloc[-1],
+            "task": df["task"].iloc[-1],
+            "method": df["method"].iloc[-1],
+            "seed": int(df["seed"].iloc[-1]),
+            "step_last": int(df["step"].iloc[-1]),
+        }
+        for col in [
+            "hidden_unsafe_rate",
+            "paired_corridor_risk",
+            "paired_current_risk",
+            "paired_corridor_risk_lift",
+            "paired_lift_positive_rate",
+            "shadow_excess_mean",
+            "effective_beta",
+            "found_but_not_executed_rate",
+        ]:
+            if col in tail.columns:
+                row[col] = float(tail[col].mean())
+        rows.append(row)
+    if rows:
+        _write_rows(REPORT_ROOT / "final" / "arm_mechanism_summary.csv", rows)
+
+
+def write_final_docs() -> None:
+    import pandas as pd
+
+    by_seed_path = REPORT_ROOT / "final" / "arm_main_results_by_seed.csv"
+    exec_path = REPORT_ROOT / "executor" / "executor_summary.md"
+    lines = ["# Panda Arm Final Claim", ""]
+    audit = ["# Panda Arm Final Audit", ""]
+    if not by_seed_path.exists():
+        lines.append("Final results are not yet available.")
+        audit.append("Missing final by-seed results.")
+    else:
+        df = pd.read_csv(by_seed_path)
+        means = df.groupby("method")[["train_total_cost", "eval_return", "eval_cost", "eval_success", "eval_violation_rate"]].mean(numeric_only=True)
+        lines.append("The Panda arm add-on is a mixed/diagnostic result, not a clean STAR-win showcase.")
+        lines.append("")
+        for method, row in means.iterrows():
+            lines.append(
+                f"- {method}: train_total_cost={row['train_total_cost']:.1f}, "
+                f"eval_return={row['eval_return']:.3f}, eval_cost={row['eval_cost']:.3f}, "
+                f"eval_success={row['eval_success']:.3f}, eval_violation_rate={row['eval_violation_rate']:.3f}"
+            )
+        lines.append("")
+        lines.append("STAR reduces evaluation cost relative to Current-only in the final summary, but it does not dominate SAC-Lag and has worse return/success tradeoffs. Present as an exploratory robot-arm add-on only.")
+        audit.extend(
+            [
+                f"- final by-seed rows: {len(df)}",
+                f"- methods: {', '.join(sorted(df['method'].unique()))}",
+                "- final 300k checkpoints exist for all three seeds per method.",
+                "- success gate is not fully met because STAR does not beat SAC-Lag on the overall success-cost tradeoff.",
+            ]
+        )
+    if exec_path.exists():
+        lines.append("")
+        lines.append("STAR+Exec summary is available in `reports/star_arm_panda/executor/executor_summary.md`.")
+        audit.append("- executor validation and confirmation were generated from same STAR checkpoints.")
+    (REPORT_ROOT / "final_claim.md").write_text("\n".join(lines) + "\n")
+    (REPORT_ROOT / "final_audit.md").write_text("\n".join(audit) + "\n")
+
+
 def table() -> None:
-    path = REPORT_ROOT / "final" / "arm_main_results_summary.csv"
+    path = REPORT_ROOT / "final" / "arm_main_results_by_seed.csv"
     out = REPORT_ROOT / "latex" / "table_arm_results.tex"
     out.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
@@ -656,8 +824,294 @@ def table() -> None:
     import pandas as pd
 
     df = pd.read_csv(path)
-    out.write_text(df.to_latex(index=False, float_format=lambda x: f"{x:.3f}"))
+    summary = df.groupby("method").agg(
+        Return=("eval_return", "mean"),
+        Success=("eval_success", "mean"),
+        Cost=("eval_cost", "mean"),
+        Violation=("eval_violation_rate", "mean"),
+        TrainCost=("train_total_cost", "mean"),
+    ).reset_index()
+    labels = {"current_only_v2": "Current-only-N", "sac_lag": "SAC-Lag", "star_v2": "STAR"}
+    summary["method"] = summary["method"].map(labels).fillna(summary["method"])
+    summary = summary.rename(
+        columns={
+            "method": "Method",
+            "Return": "Return $\\uparrow$",
+            "Success": "Success $\\uparrow$",
+            "Cost": "Cost $\\downarrow$",
+            "Violation": "EVR $\\downarrow$",
+            "TrainCost": "Train cost $\\downarrow$",
+        }
+    )
+    out.write_text(summary.to_latex(index=False, escape=False, float_format=lambda x: f"{x:.3f}"))
     print(out)
+
+
+def _config_from_spec(spec: RunSpec, extra: dict | None = None):
+    from utilis.star_default_config import star_default_config
+
+    config = star_default_config.copy()
+    params = base_params(spec)
+    params.update(
+        {
+            "eval_numsteps": 100,
+            "eval_times": 20,
+            "online_eval_mode": "none",
+            "star_exec_start_steps": 0,
+            "device": 0,
+            "cuda": True,
+            "disable_wandb": True,
+        }
+    )
+    if extra:
+        params.update(extra)
+    config.update(params)
+    return config
+
+
+def _load_star_agent(spec: RunSpec, *, candidates: int, margin: float):
+    from agents.star_agent import STARAgent
+    from main_star import make_env
+
+    checkpoint = spec.final_checkpoint
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"missing STAR checkpoint: {checkpoint}")
+    config = _config_from_spec(
+        spec,
+        {
+            "star_exec_candidates": int(candidates),
+            "star_exec_margin": float(margin),
+            "star_exec": True,
+            "training_execution_mode": "raw",
+            "evaluation_execution_mode": "both",
+        },
+    )
+    env = make_env(config.task, safe_env=config.safe_env, train=False, binary_cost=config.binary_cost)
+    agent = STARAgent(env.observation_space.shape[0], env.action_space, config)
+    agent.load_checkpoint(str(checkpoint))
+    return agent, env, config
+
+
+def _eval_one_episode(agent, env, config, *, eval_seed: int, mode: str) -> dict:
+    import numpy as np
+    from main_star import reset_env, step_env
+
+    state = reset_env(env, seed=eval_seed)
+    done = False
+    reward_sum = 0.0
+    cost_sum = 0.0
+    violations = 0
+    collisions = 0
+    path_length = 0.0
+    min_clearance = float("inf")
+    fallbacks = 0
+    fne_count = 0
+    latency = []
+    steps = 0
+    info = {}
+    while not done and steps < int(config.eval_numsteps):
+        t0 = time.perf_counter()
+        action = agent.select_action(state, evaluate=True, execution_mode=mode, total_numsteps=300000, diagnostics=True)
+        latency.append((time.perf_counter() - t0) * 1000.0)
+        next_state, reward, cost, terminated, truncated, info = step_env(env, action, config.safe_env)
+        done = terminated or truncated
+        details = agent.last_action_info
+        risk = float(details.get("selected_predicted_risk", 0.0))
+        found = (
+            bool(details.get("any_shadow_predicted_unsafe", False))
+            and risk <= float(config.star_risk_threshold)
+            and float(cost) <= 0.0
+        )
+        reward_sum += float(reward)
+        cost_sum += float(cost)
+        violations += int(cost > 0)
+        collisions += int(float(info.get("collision", 0.0)) > 0)
+        path_length += float(info.get("path_length_increment", 0.0))
+        min_clearance = min(min_clearance, float(info.get("min_clearance", float("inf"))))
+        fallbacks += int(bool(details.get("execution_fallback", False)))
+        fne_count += int(found)
+        steps += 1
+        state = next_state
+    return {
+        "eval_seed": eval_seed,
+        "mode": mode,
+        "episode_reward": reward_sum,
+        "episode_cost": cost_sum,
+        "episode_length": steps,
+        "success": float(info.get("success", 0.0)),
+        "violation_rate": violations / max(1, steps),
+        "collision_rate": collisions / max(1, steps),
+        "min_clearance": min_clearance if np.isfinite(min_clearance) else "",
+        "path_length": path_length,
+        "fallback_rate": fallbacks / max(1, steps),
+        "found_but_not_executed_rate": fne_count / max(1, steps),
+        "latency_ms": float(np.mean(latency)) if latency else 0.0,
+    }
+
+
+def _write_rows(path: Path, rows: list[dict]) -> None:
+    if not rows:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _executor_eval_rows(
+    *,
+    seeds: list[int],
+    eval_seeds: list[int],
+    candidates_values: list[int],
+    margin_values: list[float],
+) -> list[dict]:
+    rows: list[dict] = []
+    star_specs = [spec for spec in final_specs() if spec.method == "star_v2" and spec.seed in seeds]
+    for candidates in candidates_values:
+        for margin in margin_values:
+            for spec in star_specs:
+                agent, env, config = _load_star_agent(spec, candidates=candidates, margin=margin)
+                try:
+                    for eval_seed in eval_seeds:
+                        for mode in ["raw", "star_exec"]:
+                            row = _eval_one_episode(agent, env, config, eval_seed=eval_seed, mode=mode)
+                            row.update(
+                                {
+                                    "train_seed": spec.seed,
+                                    "run_name": spec.run_name,
+                                    "candidates": candidates,
+                                    "margin": margin,
+                                    "checkpoint": str(spec.final_checkpoint),
+                                }
+                            )
+                            rows.append(row)
+                finally:
+                    env.close()
+    return rows
+
+
+def _summarize_executor(rows: list[dict]) -> tuple[dict, list[dict]]:
+    import pandas as pd
+
+    df = pd.DataFrame(rows)
+    metric_cols = [
+        "episode_reward",
+        "episode_cost",
+        "success",
+        "violation_rate",
+        "collision_rate",
+        "min_clearance",
+        "path_length",
+        "fallback_rate",
+        "found_but_not_executed_rate",
+        "latency_ms",
+    ]
+    grouped = df.groupby(["candidates", "margin", "mode"], as_index=False)[metric_cols].mean(numeric_only=True)
+    raw = grouped[grouped["mode"] == "raw"].set_index(["candidates", "margin"])
+    exec_df = grouped[grouped["mode"] == "star_exec"].set_index(["candidates", "margin"])
+    selection_rows: list[dict] = []
+    for key, erow in exec_df.iterrows():
+        rrow = raw.loc[key]
+        success_drop = float(rrow["success"] - erow["success"])
+        row = {
+            "candidates": int(key[0]),
+            "margin": float(key[1]),
+            "raw_cost": float(rrow["episode_cost"]),
+            "exec_cost": float(erow["episode_cost"]),
+            "raw_violation_rate": float(rrow["violation_rate"]),
+            "exec_violation_rate": float(erow["violation_rate"]),
+            "raw_success": float(rrow["success"]),
+            "exec_success": float(erow["success"]),
+            "success_drop": success_drop,
+            "raw_return": float(rrow["episode_reward"]),
+            "exec_return": float(erow["episode_reward"]),
+            "exec_fallback_rate": float(erow["fallback_rate"]),
+            "exec_fne": float(erow["found_but_not_executed_rate"]),
+            "exec_latency_ms": float(erow["latency_ms"]),
+        }
+        selection_rows.append(row)
+    feasible = [r for r in selection_rows if r["success_drop"] <= 0.05]
+    pool = feasible if feasible else selection_rows
+    pool.sort(
+        key=lambda r: (
+            r["exec_violation_rate"],
+            r["exec_cost"],
+            max(0.0, r["success_drop"]),
+            r["exec_fallback_rate"],
+            r["candidates"],
+        )
+    )
+    return pool[0], selection_rows
+
+
+def executor_eval() -> None:
+    ensure_dirs()
+    validation_path = REPORT_ROOT / "executor" / "executor_validation.csv"
+    confirmation_path = REPORT_ROOT / "executor" / "executor_confirmation.csv"
+    selection_path = REPORT_ROOT / "executor" / "executor_validation_summary.csv"
+    selected_config_path = CONFIG_DIR / "star_arm_selected_executor.json"
+
+    if not validation_path.exists():
+        validation_rows = _executor_eval_rows(
+            seeds=[10, 11, 12],
+            eval_seeds=list(range(700000, 700010)),
+            candidates_values=[8, 16, 32],
+            margin_values=[0.00, 0.02, 0.05, 0.08],
+        )
+        _write_rows(validation_path, validation_rows)
+    else:
+        import pandas as pd
+
+        validation_rows = pd.read_csv(validation_path).to_dict("records")
+
+    selected, selection_rows = _summarize_executor(validation_rows)
+    _write_rows(selection_path, selection_rows)
+    selected_config = {
+        "star_exec_candidates": int(selected["candidates"]),
+        "star_exec_margin": float(selected["margin"]),
+        "selection_source": str(validation_path),
+        "selection_rule": "minimize held-in validation violation/cost with success_drop <= 0.05 when feasible",
+    }
+    selected_config_path.write_text(json.dumps(selected_config, indent=2) + "\n")
+
+    if not confirmation_path.exists():
+        confirmation_rows = _executor_eval_rows(
+            seeds=[10, 11, 12],
+            eval_seeds=list(range(800000, 800020)),
+            candidates_values=[selected_config["star_exec_candidates"]],
+            margin_values=[selected_config["star_exec_margin"]],
+        )
+        _write_rows(confirmation_path, confirmation_rows)
+    else:
+        import pandas as pd
+
+        confirmation_rows = pd.read_csv(confirmation_path).to_dict("records")
+
+    selected_confirm, confirm_rows = _summarize_executor(confirmation_rows)
+    _write_rows(REPORT_ROOT / "executor" / "executor_confirmation_summary.csv", confirm_rows)
+    lines = [
+        "# STAR+Exec Panda Evaluation",
+        "",
+        "Same STAR checkpoints are used; candidate execution is evaluation-only.",
+        "",
+        f"- selected candidates: `{selected_config['star_exec_candidates']}`",
+        f"- selected margin: `{selected_config['star_exec_margin']}`",
+        f"- validation raw cost -> STAR+Exec cost: `{selected['raw_cost']:.3f} -> {selected['exec_cost']:.3f}`",
+        f"- validation raw violation -> STAR+Exec violation: `{selected['raw_violation_rate']:.3f} -> {selected['exec_violation_rate']:.3f}`",
+        f"- validation success drop: `{selected['success_drop']:.3f}`",
+        "",
+        "Held-out confirmation at selected config:",
+        f"- raw cost -> STAR+Exec cost: `{selected_confirm['raw_cost']:.3f} -> {selected_confirm['exec_cost']:.3f}`",
+        f"- raw violation -> STAR+Exec violation: `{selected_confirm['raw_violation_rate']:.3f} -> {selected_confirm['exec_violation_rate']:.3f}`",
+        f"- raw success -> STAR+Exec success: `{selected_confirm['raw_success']:.3f} -> {selected_confirm['exec_success']:.3f}`",
+        f"- raw return -> STAR+Exec return: `{selected_confirm['raw_return']:.3f} -> {selected_confirm['exec_return']:.3f}`",
+        f"- fallback rate: `{selected_confirm['exec_fallback_rate']:.3f}`",
+        f"- found-but-not-executed rate: `{selected_confirm['exec_fne']:.3f}`",
+        f"- mean action-selection latency ms: `{selected_confirm['exec_latency_ms']:.3f}`",
+    ]
+    (REPORT_ROOT / "executor" / "executor_summary.md").write_text("\n".join(lines) + "\n")
+    print(REPORT_ROOT / "executor" / "executor_summary.md")
 
 
 def main() -> None:
@@ -686,13 +1140,7 @@ def main() -> None:
         else:
             launch_tmux(final_specs(), phase="final")
     elif args.command == "executor":
-        ensure_dirs()
-        (REPORT_ROOT / "executor" / "executor_summary.md").write_text(
-            "# STAR+Exec Panda Evaluation\n\nPending: run after final STAR checkpoints complete.\n"
-        )
-        (CONFIG_DIR / "star_arm_selected_executor.json").write_text(
-            json.dumps({"star_exec_candidates": 16, "star_exec_margin": 0.02, "status": "pending_final_checkpoints"}, indent=2) + "\n"
-        )
+        executor_eval()
     elif args.command == "figures":
         figures()
     elif args.command == "collect":

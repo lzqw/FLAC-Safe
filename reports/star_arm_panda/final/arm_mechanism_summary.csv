@@ -1,0 +1,4 @@
+run_name,task,method,seed,step_last,hidden_unsafe_rate,paired_corridor_risk,paired_current_risk,paired_corridor_risk_lift,paired_lift_positive_rate,shadow_excess_mean,effective_beta,found_but_not_executed_rate
+panda_final_star_cfg2_star_v2_s10,SafetyPandaReachObstacle-v0,star_v2,10,295000,0.00703125,0.7876886248588562,0.7876886248588562,1.1316387826809662e-10,0.009375,0.761457484960556,0.5317769467830658,0.0
+panda_final_star_cfg2_star_v2_s11,SafetyPandaReachObstacle-v0,star_v2,11,295000,0.01171875,0.847718107700348,0.847718107700348,-3.7929623886157053e-10,0.01328125,0.820258504152298,0.5310551941394805,0.0
+panda_final_star_cfg2_star_v2_s12,SafetyPandaReachObstacle-v0,star_v2,12,295000,0.01796875,0.7782776474952697,0.7782776474952697,-2.1404957806225866e-10,0.01015625,0.75099316239357,0.531948059797287,0.0

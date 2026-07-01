@@ -1,0 +1,6 @@
+{
+  "star_exec_candidates": 16,
+  "star_exec_margin": 0.02,
+  "selection_source": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/executor/executor_validation.csv",
+  "selection_rule": "minimize held-in validation violation/cost with success_drop <= 0.05 when feasible"
+}
