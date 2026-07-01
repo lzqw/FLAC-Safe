@@ -498,12 +498,33 @@ def select_calibration() -> None:
         ],
         "selection_note": "Fallback default; calibration summary did not show a stronger completed STAR candidate yet.",
     }
+    override_by_config = {
+        "star_cfg1": [
+            ["shadow_num_strata", 16],
+            ["star_risk_threshold", 0.05],
+            ["star_lambda", 1.0],
+            ["star_ref_update_interval", 50],
+        ],
+        "star_cfg2": [
+            ["shadow_num_strata", 16],
+            ["star_risk_threshold", 0.03],
+            ["star_lambda", 2.0],
+            ["star_ref_update_interval", 100],
+        ],
+        "star_cfg3": [
+            ["shadow_num_strata", 32],
+            ["star_risk_threshold", 0.05],
+            ["star_lambda", 1.0],
+            ["star_ref_update_interval", 50],
+        ],
+    }
     if rows:
         star_rows = [r for r in rows if r["method"] == "star_v2" and int(r["step"]) >= 100000]
         if star_rows:
             star_rows.sort(key=lambda r: (float(r["train_cost_last"]), -float(r["train_return_last"])))
             best = star_rows[0]
             selected["config_name"] = best["run_name"].split("_star_v2_")[0].replace("panda_calibration_", "")
+            selected["overrides"] = override_by_config.get(selected["config_name"], selected["overrides"])
             selected["selection_note"] = f"Selected from completed calibration row {best['run_name']}."
     (CONFIG_DIR / "star_arm_selected_actor.json").write_text(json.dumps(selected, indent=2) + "\n")
     (REPORT_ROOT / "calibration" / "selected_config.md").write_text(

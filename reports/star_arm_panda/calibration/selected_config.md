@@ -1,0 +1,5 @@
+# Selected Panda STAR Config
+
+- config_name: `star_cfg2`
+- note: Selected from completed calibration row panda_calibration_star_cfg2_star_v2_s1.
+- overrides: `[['shadow_num_strata', 16], ['star_risk_threshold', 0.03], ['star_lambda', 2.0], ['star_ref_update_interval', 100]]`
