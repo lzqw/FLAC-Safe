@@ -1,0 +1,4 @@
+phase,task,method,seed,run_name,step,train_return_last,train_cost_last,train_total_cost,eval_return,eval_cost,eval_success,eval_violation_rate,result_dir
+smoke,SafetyPandaReachObstacle-v0,current_only_v2,0,panda_smoke_smoke5k_v2_current_only_v2_s0,5000,-19.78812697172165,19.0,1439.0,,,,,/root/autodl-tmp/star_v2_storage/results/star_arm_panda/smoke/SafetyPandaReachObstacle-v0/current_only_v2/panda_smoke_smoke5k_v2_current_only_v2_s0
+smoke,SafetyPandaReachObstacle-v0,sac_lag,0,panda_smoke_smoke5k_v2_sac_lag_s0,5000,-8.493500682786108,10.0,992.0,,,,,/root/autodl-tmp/star_v2_storage/results/star_arm_panda/smoke/SafetyPandaReachObstacle-v0/sac_lag/panda_smoke_smoke5k_v2_sac_lag_s0
+smoke,SafetyPandaReachObstacle-v0,star_v2,0,panda_smoke_smoke5k_v2_star_v2_s0,5000,-18.27224604003132,16.0,1572.0,,,,,/root/autodl-tmp/star_v2_storage/results/star_arm_panda/smoke/SafetyPandaReachObstacle-v0/star_v2/panda_smoke_smoke5k_v2_star_v2_s0

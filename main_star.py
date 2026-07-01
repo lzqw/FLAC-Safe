@@ -182,6 +182,8 @@ def make_env(task, *, safe_env=False, train=True, binary_cost=True):
         from envs.safety_gym_wrapper import make_safe_env
 
         return make_safe_env(task, train=train, binary_cost=binary_cost)
+    if str(task).startswith("SafetyPanda"):
+        import envs.safety_panda_reach_obstacle  # noqa: F401 - registers Gymnasium env.
     return gym.make(task)
 
 
