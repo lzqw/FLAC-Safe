@@ -1,0 +1,9 @@
+{
+  "episode": 0,
+  "finger_links_available": true,
+  "gripper_link": 11,
+  "left_finger_link": 9,
+  "notes": "Gripper and finger positions are read from PyBullet link states during true policy replays.",
+  "right_finger_link": 10,
+  "seed": 900078
+}
