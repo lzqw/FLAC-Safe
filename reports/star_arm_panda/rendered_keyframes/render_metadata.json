@@ -1,0 +1,141 @@
+{
+  "camera": {
+    "cameraEyePosition": [
+      0.75,
+      -0.75,
+      0.85
+    ],
+    "cameraTargetPosition": [
+      0.5,
+      0.0,
+      0.25
+    ],
+    "cameraUpVector": [
+      0.0,
+      0.0,
+      1.0
+    ],
+    "fov": 50,
+    "height": 480,
+    "renderer": "pybullet.ER_TINY_RENDERER",
+    "source": "SafetyPandaReachObstacleEnv.render",
+    "width": 640
+  },
+  "checkpoint": "/root/autodl-tmp/star_v2_storage/results/star_arm_panda/showcase_mechanism/SafetyPandaReachObstacle-v0/star_v2/panda_showcase_refcorridor_star_v2_s30/checkpoint/final.torch",
+  "episode": 0,
+  "frames": {
+    "audit_state": {
+      "clearance": 0.07817261116174043,
+      "cost": 0.0,
+      "distance_to_goal": 0.06477300916782998,
+      "distance_to_obstacle": 0.20817261116174043,
+      "label": "audit_state",
+      "obstacle_radius": 0.07,
+      "p_ee": [
+        0.5876144170761108,
+        0.18188685178756714,
+        0.248154878616333
+      ],
+      "p_goal": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "p_obs": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "path": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/rendered_keyframes/render_audit_state.png",
+      "render_method": "reconstructed_from_logged_audit_state",
+      "safe_margin": 0.13,
+      "source": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/qualitative/audit_snapshot.csv",
+      "step": 16,
+      "success": 0.0
+    },
+    "final": {
+      "clearance": 0.10706931552324153,
+      "cost": 0.0,
+      "distance_to_goal": 0.019254965716912466,
+      "distance_to_obstacle": 0.23706931552324154,
+      "label": "final",
+      "obstacle_radius": 0.07,
+      "p_ee": [
+        0.5202429890632629,
+        0.22075597941875458,
+        0.26838716864585876
+      ],
+      "p_goal": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "p_obs": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "path": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/rendered_keyframes/render_final.png",
+      "safe_margin": 0.13,
+      "step": 21,
+      "success": 1.0
+    },
+    "near_obstacle": {
+      "clearance": 0.039644120809492284,
+      "cost": 0.0,
+      "distance_to_goal": 0.2946435969818361,
+      "distance_to_obstacle": 0.1696441208094923,
+      "label": "near_obstacle",
+      "obstacle_radius": 0.07,
+      "p_ee": [
+        0.34990939497947693,
+        -0.009500895626842976,
+        0.2543490529060364
+      ],
+      "p_goal": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "p_obs": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "path": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/rendered_keyframes/render_near_obstacle.png",
+      "safe_margin": 0.13,
+      "step": 8,
+      "success": 0.0
+    },
+    "start": {
+      "clearance": 0.03639940991052057,
+      "cost": 0.0,
+      "distance_to_goal": 0.3930182596601853,
+      "distance_to_obstacle": 0.16639940991052057,
+      "label": "start",
+      "obstacle_radius": 0.07,
+      "p_ee": [
+        0.4498244524002075,
+        -0.16421523690223694,
+        0.25746268033981323
+      ],
+      "p_goal": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "p_obs": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "path": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/rendered_keyframes/render_start.png",
+      "safe_margin": 0.13,
+      "step": 0,
+      "success": 0.0
+    }
+  },
+  "notes": "Start, near-obstacle, and final frames are captured from a replayed STAR+Exec evaluation episode with the selected checkpoint, seed, and deterministic episode RNG. The audit-state frame is rendered by setting the PyBullet robot to the logged audit_snapshot.csv end-effector, goal, and obstacle positions, because the exact stochastic audit query state is preserved in logs rather than recoverable from the later trajectory replay. A blue goal visual marker is added at the actual goal position for rendering only.",
+  "render_method": "hybrid_true_replay_plus_logged_audit_state_reconstruction",
+  "seed": 900078
+}

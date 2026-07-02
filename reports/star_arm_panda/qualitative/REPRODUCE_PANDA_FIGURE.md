@@ -30,3 +30,15 @@ The packaged CSVs are normalized for local paper plotting:
 - `audit_summary.json`
 
 Caveat: this is a qualitative controlled ref-corridor mechanism case. Raw STAR is mixed on this seed; STAR+Exec gives the clean selected-episode trajectory. Broader Panda evaluation is not claimed as a benchmark win.
+
+## Rendered Panda Keyframes
+
+Regenerate PyBullet rendered keyframes and the rendered combined figure:
+
+```bash
+cd /root/FLAC-Safe-star-v2
+export PYTHONPATH=.
+/root/miniconda3/envs/flac/bin/python scripts/star/render_panda_selected_episode.py
+```
+
+The script writes `reports/star_arm_panda/rendered_keyframes/render_metadata.json`. Start, near-obstacle, and final frames are true STAR+Exec replay frames. The audit-state frame is rendered from the logged real audit state in `audit_snapshot.csv` so the robot pose matches the saved critic-query candidates.
