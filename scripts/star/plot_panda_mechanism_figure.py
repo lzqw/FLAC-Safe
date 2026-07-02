@@ -67,10 +67,15 @@ def add_geometry(ax, start, goal, obstacle, radius, margin, *, legend: bool = Fa
 
 def endpoint_frame(snapshot: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
     row = snapshot.iloc[0]
-    ee = np.asarray([row["ee_x"], row["ee_y"], row["ee_z"]], dtype=float)
-    goal = parse_vec(row["goal_pos"])
-    obstacle = parse_vec(row["obstacle_pos"])
-    return ee, goal, obstacle, float(row["obstacle_radius"]), float(row["safe_margin"])
+    if {"p_ee_x", "p_goal_x", "p_obs_x"}.issubset(snapshot.columns):
+        ee = np.asarray([row["p_ee_x"], row["p_ee_y"], row["p_ee_z"]], dtype=float)
+        goal = np.asarray([row["p_goal_x"], row["p_goal_y"], row["p_goal_z"]], dtype=float)
+        obstacle = np.asarray([row["p_obs_x"], row["p_obs_y"], row["p_obs_z"]], dtype=float)
+    else:
+        ee = np.asarray([row["ee_x"], row["ee_y"], row["ee_z"]], dtype=float)
+        goal = parse_vec(row["goal_pos"])
+        obstacle = parse_vec(row["obstacle_pos"])
+    return ee, goal, obstacle, float(row.get("obstacle_radius", 0.07)), float(row["safe_margin"])
 
 
 def plot_audit(ax, snapshot: pd.DataFrame):
@@ -82,15 +87,16 @@ def plot_audit(ax, snapshot: pd.DataFrame):
     cur = snapshot[snapshot["candidate_type"] == "current_only"]
     cor = snapshot[snapshot["candidate_type"] == "corridor_shadow"]
     mean = snapshot[snapshot["candidate_type"] == "actor_mean"].iloc[0]
-    threshold = float(mean["threshold"])
+    q_col = "predicted_QC" if "predicted_QC" in snapshot.columns else "q_cost"
+    threshold = float(mean["d_aud"] if "d_aud" in snapshot.columns else mean["threshold"])
 
     if not cur.empty:
         ax.scatter(cur["endpoint_x"], cur["endpoint_y"], s=20, c="#3A78C2", alpha=0.45, edgecolor="none", label="current-only samples")
     if not cor.empty:
-        q = cor["q_cost"].to_numpy(float)
+        q = cor[q_col].to_numpy(float)
         vmax = max(threshold * 2.0, float(np.nanmax(q)) if len(q) else threshold)
         sc = ax.scatter(cor["endpoint_x"], cor["endpoint_y"], c=q, cmap="coolwarm", vmin=0.0, vmax=vmax, s=30, alpha=0.9, edgecolor="#333333", linewidth=0.25, label="STAR corridor shadows")
-        risky = cor[cor["q_cost"] > threshold]
+        risky = cor[cor[q_col] > threshold]
         if not risky.empty:
             ax.scatter(risky["endpoint_x"], risky["endpoint_y"], s=74, facecolors="none", edgecolors="#B00020", linewidth=1.1, label="high-risk queried")
         return_sc = sc
@@ -113,34 +119,44 @@ def plot_audit(ax, snapshot: pd.DataFrame):
 
 def plot_trajectories(ax, traj: pd.DataFrame):
     first = traj.iloc[0]
-    start = parse_vec(first["start_pos"])
-    goal = parse_vec(first["goal_pos"])
-    obstacle = parse_vec(first["obstacle_pos"])
-    radius = float(first["obstacle_radius"])
+    if {"p_ee_x", "p_goal_x", "p_obs_x"}.issubset(traj.columns):
+        start = traj.sort_values("step").iloc[0][["p_ee_x", "p_ee_y", "p_ee_z"]].to_numpy(float)
+        goal = first[["p_goal_x", "p_goal_y", "p_goal_z"]].to_numpy(float)
+        obstacle = first[["p_obs_x", "p_obs_y", "p_obs_z"]].to_numpy(float)
+    else:
+        start = parse_vec(first["start_pos"])
+        goal = parse_vec(first["goal_pos"])
+        obstacle = parse_vec(first["obstacle_pos"])
+    radius = float(first.get("obstacle_radius", 0.07))
     margin = float(first["safe_margin"])
     add_geometry(ax, start, goal, obstacle, radius, margin, legend=True)
-    for label, group in traj.groupby("method_label", sort=False):
+    method_col = "method_label" if "method_label" in traj.columns else "method"
+    x_col = "ee_x" if "ee_x" in traj.columns else "p_ee_x"
+    y_col = "ee_y" if "ee_y" in traj.columns else "p_ee_y"
+    for label, group in traj.groupby(method_col, sort=False):
         group = group.sort_values("step")
-        x = group["ee_x"].to_numpy(float)
-        y = group["ee_y"].to_numpy(float)
+        x = group[x_col].to_numpy(float)
+        y = group[y_col].to_numpy(float)
         color = COLORS.get(label, None)
         ax.plot(x, y, lw=1.9, color=color, label=label)
         ax.scatter(x[-1], y[-1], s=30, color=color, zorder=8)
         bad = group[group["cost"] > 0]
         if not bad.empty:
-            ax.scatter(bad["ee_x"], bad["ee_y"], marker="x", s=20, color="#B00020", lw=0.9, zorder=9)
+            ax.scatter(bad[x_col], bad[y_col], marker="x", s=20, color="#B00020", lw=0.9, zorder=9)
     ax.set_title("(b) End-effector trajectories")
     ax.legend(loc="upper left", frameon=False, ncol=1, handlelength=1.5)
 
 
 def plot_clearance(ax, traj: pd.DataFrame):
-    for label, group in traj.groupby("method_label", sort=False):
+    method_col = "method_label" if "method_label" in traj.columns else "method"
+    clearance_col = "clearance_keepout" if "clearance_keepout" in traj.columns else "clearance"
+    for label, group in traj.groupby(method_col, sort=False):
         group = group.sort_values("step")
         color = COLORS.get(label, None)
-        ax.plot(group["step"], group["clearance_keepout"], lw=1.8, color=color, label=label)
+        ax.plot(group["step"], group[clearance_col], lw=1.8, color=color, label=label)
     ax.axhline(0.0, color="#333333", lw=0.8, ls="--")
-    ymin = float(np.nanmin(traj["clearance_keepout"]))
-    ymax = float(np.nanmax(traj["clearance_keepout"]))
+    ymin = float(np.nanmin(traj[clearance_col]))
+    ymax = float(np.nanmax(traj[clearance_col]))
     ax.axhspan(min(ymin, -0.12), 0.0, color="#F3B7B1", alpha=0.25, lw=0)
     ax.set_ylim(min(ymin - 0.015, -0.04), max(ymax + 0.02, 0.04))
     ax.set_xlabel("step")
@@ -154,7 +170,9 @@ def write_text(selected: dict, methods: pd.DataFrame, snapshot: pd.DataFrame, ou
     state = selected["selected_state"]
     actor_safe = float(state["mean_action_risk"]) <= float(state["threshold"])
     risky = float(state["corridor_q_max"]) > float(state["threshold"])
-    risky_executed = bool((snapshot[(snapshot["candidate_type"] == "corridor_shadow") & (snapshot["q_cost"] > float(state["threshold"]))]["executed"] > 0).any()) if not snapshot.empty else False
+    q_col = "predicted_QC" if "predicted_QC" in snapshot.columns else "q_cost"
+    threshold_col = "d_aud" if "d_aud" in snapshot.columns else "threshold"
+    risky_executed = bool((snapshot[(snapshot["candidate_type"] == "corridor_shadow") & (snapshot[q_col] > float(state["threshold"]))]["executed"] > 0).any()) if not snapshot.empty else False
     star_row = methods[(methods["method_label"] == "STAR")].iloc[0]
     current_row = methods[(methods["method_label"] == "Current-only-N")].iloc[0]
     sac_row = methods[(methods["method_label"] == "SAC-Lag")].iloc[0]

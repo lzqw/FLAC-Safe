@@ -1,0 +1,18 @@
+{
+  "actor_mean_Q": 0.025621959939599,
+  "corridor_lift": 0.21535199880599976,
+  "d_aud": 0.05,
+  "max_corridor_Q": 0.762424111366272,
+  "notes": "Qualitative controlled ref-corridor mechanism case. Raw STAR is mixed on this seed; STAR+Exec gives the clean selected-episode trajectory. Broader Panda showcase evaluation is not a benchmark-win claim.",
+  "raw_star_cost": 12.0,
+  "raw_star_success": 0.0,
+  "rho_cor": 0.6239330768585205,
+  "rho_cur": 0.4085810780525207,
+  "risky_shadows_executed": false,
+  "selected_episode": 0,
+  "selected_seed": 900078,
+  "selected_step": 16,
+  "star_exec_cost": 0.0,
+  "star_exec_min_clearance": 0.0396441173553466,
+  "star_exec_success": 1.0
+}
