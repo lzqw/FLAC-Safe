@@ -452,6 +452,13 @@ def start_supervisor(stages: list[str], name: str) -> None:
 def resume(args: argparse.Namespace) -> None:
     stages = set(args.stages.split(",")) if args.stages else {"stage_a_star", "stage_b_baselines1"}
     while True:
+        if "stage_b_baselines1" in stages and "stage_a_star" not in stages and not stage_done({"stage_a_star"}):
+            write_status_md()
+            if not args.loop:
+                print("stage_b_baselines1 is waiting for stage_a_star to complete")
+                break
+            time.sleep(args.interval)
+            continue
         launch_pending(stages, max_new=args.max_new)
         if not args.loop or stage_done(stages):
             break
