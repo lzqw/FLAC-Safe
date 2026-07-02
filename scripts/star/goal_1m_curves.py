@@ -149,6 +149,63 @@ def max_train_step(spec: RunSpec) -> int:
         return 0
 
 
+def train_progress_stats(spec: RunSpec) -> dict[str, object]:
+    path = spec.result_dir / "train_episodes.csv"
+    empty = {
+        "max_step": 0,
+        "episodes": 0,
+        "wall_clock_time": 0.0,
+        "overall_steps_per_sec": 0.0,
+        "recent_steps_per_sec": 0.0,
+        "eta_hours": "",
+        "train_total_cost": "",
+        "train_cost_rate": "",
+    }
+    if not path.exists():
+        return empty
+    try:
+        import pandas as pd
+
+        df = pd.read_csv(path)
+    except Exception:
+        return empty
+    if df.empty or "end_step" not in df.columns:
+        return empty
+    df = df.sort_values("end_step")
+    max_step = int(df["end_step"].max())
+    episodes = int(len(df))
+    wall = float(df["wall_clock_time"].dropna().iloc[-1]) if "wall_clock_time" in df.columns and df["wall_clock_time"].notna().any() else 0.0
+    overall = float(max_step / wall) if wall > 0 else 0.0
+    recent = 0.0
+    if "wall_clock_time" in df.columns and len(df) >= 2:
+        tail = df.dropna(subset=["end_step", "wall_clock_time"]).tail(6)
+        if len(tail) >= 2:
+            step_delta = float(tail["end_step"].iloc[-1] - tail["end_step"].iloc[0])
+            time_delta = float(tail["wall_clock_time"].iloc[-1] - tail["wall_clock_time"].iloc[0])
+            if time_delta > 0:
+                recent = step_delta / time_delta
+    speed = recent or overall
+    eta_hours: float | str = ""
+    if speed > 0 and max_step < spec.steps:
+        eta_hours = (spec.steps - max_step) / speed / 3600.0
+    total_cost: float | str = ""
+    cost_rate: float | str = ""
+    if "train_total_cost" in df.columns and df["train_total_cost"].notna().any():
+        total_cost = float(df["train_total_cost"].dropna().iloc[-1])
+    if "train_total_cost_rate" in df.columns and df["train_total_cost_rate"].notna().any():
+        cost_rate = float(df["train_total_cost_rate"].dropna().iloc[-1])
+    return {
+        "max_step": max_step,
+        "episodes": episodes,
+        "wall_clock_time": wall,
+        "overall_steps_per_sec": overall,
+        "recent_steps_per_sec": recent,
+        "eta_hours": eta_hours,
+        "train_total_cost": total_cost,
+        "train_cost_rate": cost_rate,
+    }
+
+
 def is_complete(spec: RunSpec) -> bool:
     return spec.final_checkpoint.exists() or max_train_step(spec) >= spec.steps
 
@@ -481,22 +538,69 @@ def write_status_md() -> None:
     ps_text = ps_output()
     lines = ["# STAR 1M Curves Status", "", f"Updated: `{time.strftime('%F %T')}`", ""]
     rows = []
+    progress_rows = []
     for spec in all_specs():
         status = status_for_spec(spec, ps_text)
-        rows.append((spec, status, max_train_step(spec), scan_log(spec.log_path)))
+        stats = train_progress_stats(spec)
+        rows.append((spec, status, stats, scan_log(spec.log_path)))
+        progress_rows.append(
+            {
+                "stage": spec.stage,
+                "task": spec.task_name,
+                "env_id": spec.env_id,
+                "method": spec.method,
+                "display_method": AVAILABLE_METHODS.get(spec.method, spec.method),
+                "seed": spec.seed,
+                "status": status,
+                **stats,
+            }
+        )
+    progress_path = REPORT_ROOT / "status" / "progress_summary.csv"
+    progress_fields = [
+        "stage",
+        "task",
+        "env_id",
+        "method",
+        "display_method",
+        "seed",
+        "status",
+        "max_step",
+        "episodes",
+        "wall_clock_time",
+        "overall_steps_per_sec",
+        "recent_steps_per_sec",
+        "eta_hours",
+        "train_total_cost",
+        "train_cost_rate",
+    ]
+    with progress_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=progress_fields)
+        writer.writeheader()
+        for row in progress_rows:
+            writer.writerow(row)
+    loadavg = run(["env", "LC_ALL=C", "LANG=C", "bash", "-lc", "cat /proc/loadavg; nproc"]).stdout.strip().splitlines()
+    if loadavg:
+        cpu_line = loadavg[0]
+        nproc = loadavg[1] if len(loadavg) > 1 else "unknown"
+        lines.extend(["## Host Load", "", f"- CPU loadavg: `{cpu_line}`", f"- nproc: `{nproc}`", ""])
     for stage in ("stage_a_star", "stage_b_baselines1"):
-        subset = [(s, st, step, errs) for s, st, step, errs in rows if s.stage == stage]
+        subset = [(s, st, stats, errs) for s, st, stats, errs in rows if s.stage == stage]
         lines.append(f"## {stage}")
         counts: dict[str, int] = {}
-        for _s, st, _step, _errs in subset:
+        for _s, st, _stats, _errs in subset:
             counts[st] = counts.get(st, 0) + 1
         lines.append(" ".join(f"`{k}`={v}" for k, v in sorted(counts.items())) or "no specs")
         lines.append("")
-        lines.append("| task | method | seed | status | max_step | errors |")
-        lines.append("|---|---:|---:|---|---:|---|")
-        for spec, st, step, errs in subset:
+        lines.append("| task | method | seed | status | max_step | recent steps/s | ETA h | errors |")
+        lines.append("|---|---:|---:|---|---:|---:|---:|---|")
+        for spec, st, stats, errs in subset:
+            recent = float(stats["recent_steps_per_sec"] or 0.0)
+            overall = float(stats["overall_steps_per_sec"] or 0.0)
+            eta = stats["eta_hours"]
+            eta_text = f"{float(eta):.2f}" if isinstance(eta, float) else ""
+            speed_text = f"{(recent or overall):.2f}" if (recent or overall) else ""
             lines.append(
-                f"| {spec.task_name} | {AVAILABLE_METHODS.get(spec.method, spec.method)} | {spec.seed} | {st} | {step} | {', '.join(errs)} |"
+                f"| {spec.task_name} | {AVAILABLE_METHODS.get(spec.method, spec.method)} | {spec.seed} | {st} | {stats['max_step']} | {speed_text} | {eta_text} | {', '.join(errs)} |"
             )
         lines.append("")
     resources = run(["bash", "-lc", "nvidia-smi || true; df -h"]).stdout
