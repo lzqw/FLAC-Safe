@@ -534,65 +534,24 @@ def collect(_args: argparse.Namespace | None = None) -> None:
 
 
 def plot(_args: argparse.Namespace | None = None) -> None:
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import pandas as pd
-
-    path = REPORT_ROOT / "curves" / "training_curves_long.csv"
-    if not path.exists():
-        collect(None)
-    df = pd.read_csv(path)
-    if df.empty:
-        print("no curve rows yet")
-        return
-    mpl.rcParams.update({"font.family": "serif", "mathtext.fontset": "stix"})
-    grid = np.arange(0, 1_000_001, 10_000)
-    tasks = list(TASKS)
-    methods = [("STAR", "#7A4FA3"), ("SAC-Lag", "#54A24B")]
-    fig, axes = plt.subplots(len(tasks), 2, figsize=(11.5, 8.5), dpi=220, sharex=True)
-    for i, task in enumerate(tasks):
-        task_df = df[df["task"] == task]
-        for method, color in methods:
-            group = task_df[task_df["method"] == method]
-            if group.empty:
-                continue
-            for ax, value_col, ylabel in [
-                (axes[i, 0], "return_value", "return"),
-                (axes[i, 1], "cumulative_cost", "cumulative cost"),
-            ]:
-                series = []
-                for _seed, seed_df in group.groupby("seed"):
-                    seed_df = seed_df.sort_values("step")
-                    x = seed_df["step"].to_numpy()
-                    y = seed_df[value_col].to_numpy()
-                    if len(x) < 2:
-                        continue
-                    series.append(np.interp(grid, x, y, left=np.nan, right=np.nan))
-                if not series:
-                    continue
-                arr = np.vstack(series)
-                mean = np.nanmean(arr, axis=0)
-                std = np.nanstd(arr, axis=0)
-                ax.plot(grid, mean, color=color, label=method)
-                ax.fill_between(grid, mean - std, mean + std, color=color, alpha=0.18, lw=0)
-                ax.set_ylabel(f"{task}\n{ylabel}")
-                ax.grid(True, alpha=0.2, lw=0.4)
-    for ax in axes[-1, :]:
-        ax.set_xlabel("environment steps")
-    axes[0, 0].legend(frameon=False)
-    fig.tight_layout()
-    REPORT_ROOT.joinpath("figures").mkdir(parents=True, exist_ok=True)
-    base = REPORT_ROOT / "figures" / "fig_1m_training_curves"
-    for suffix in ("png", "pdf", "svg"):
-        fig.savefig(base.with_suffix(f".{suffix}"), bbox_inches="tight")
-    plt.close(fig)
-    print(base.with_suffix(".png"))
+    collect(None)
+    cmd = [PYTHON, "scripts/star/plot_1m_curves.py"]
+    if _args is not None:
+        if getattr(_args, "methods", ""):
+            cmd.extend(["--methods", str(_args.methods)])
+        if getattr(_args, "all", False):
+            cmd.append("--all")
+        if getattr(_args, "star_only", False):
+            cmd.append("--star-only")
+        if getattr(_args, "core", False):
+            cmd.append("--core")
+    proc = run(cmd)
+    print(proc.stdout)
 
 
 def package(_args: argparse.Namespace | None = None) -> None:
     collect(None)
-    archive = Path("/root/star_1m_curves_artifacts.tar.gz")
+    archive = Path("/root/star_1m_curves_package.tar.gz")
     include = [
         REPORT_ROOT / "run_manifest.csv",
         REPORT_ROOT / "setup",
@@ -601,6 +560,7 @@ def package(_args: argparse.Namespace | None = None) -> None:
         REPORT_ROOT / "figures",
         REPO / "scripts" / "star" / "goal_1m_curves.py",
         REPO / "scripts" / "star" / "collect_1m_curves.py",
+        REPO / "scripts" / "star" / "plot_1m_curves.py",
     ]
     with tarfile.open(archive, "w:gz") as tar:
         for path in include:
@@ -616,11 +576,18 @@ def main() -> None:
     sub.add_parser("plan")
     sub.add_parser("status")
     sub.add_parser("collect")
-    sub.add_parser("plot")
+    plot_parser = sub.add_parser("plot")
+    plot_parser.add_argument("--methods", default="")
+    plot_parser.add_argument("--all", action="store_true")
+    plot_parser.add_argument("--star-only", action="store_true")
+    plot_parser.add_argument("--core", action="store_true")
     sub.add_parser("package")
-    sub.add_parser("launch-star")
-    sub.add_parser("launch-baselines1")
-    sub.add_parser("launch-baselines2")
+    launch_star_parser = sub.add_parser("launch-star")
+    launch_star_parser.add_argument("--resume", action="store_true")
+    launch_baselines1_parser = sub.add_parser("launch-baselines1")
+    launch_baselines1_parser.add_argument("--resume", action="store_true")
+    launch_baselines2_parser = sub.add_parser("launch-baselines2")
+    launch_baselines2_parser.add_argument("--resume", action="store_true")
     resume_parser = sub.add_parser("resume")
     resume_parser.add_argument("--stages", default="stage_a_star,stage_b_baselines1")
     resume_parser.add_argument("--loop", action="store_true")
