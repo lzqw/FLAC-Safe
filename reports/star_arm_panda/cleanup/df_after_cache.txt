@@ -1,0 +1,14 @@
+Filesystem      Size  Used Avail Use% Mounted on
+overlay          30G   28G  3.0G  91% /
+/dev/md127      7.0T  6.8T  236G  97% /autodl-pub
+AutoFS:fs1      4.0T  2.6T  1.5T  65% /autodl-pub/data
+tmpfs            64M     0   64M   0% /dev
+shm              90G     0   90G   0% /dev/shm
+/dev/nvme0n1p2  1.8T   16G  1.7T   1% /usr/bin/nvidia-smi
+tmpfs           504G   12K  504G   1% /proc/driver/nvidia
+tmpfs           504G  4.0K  504G   1% /etc/nvidia/nvidia-application-profiles-rc.d
+tmpfs           504G     0  504G   0% /proc/asound
+tmpfs           504G     0  504G   0% /proc/acpi
+tmpfs           504G     0  504G   0% /proc/scsi
+tmpfs           504G     0  504G   0% /sys/firmware
+tmpfs           504G     0  504G   0% /sys/devices/virtual/powercap

@@ -1,0 +1,7 @@
+28K	/root/autodl-tmp/star_v2_storage/cache
+3.8M	/root/autodl-tmp/.autodl
+7.7M	/root/autodl-tmp/star_v2_storage/tmp
+42M	/root/autodl-tmp/star_v2_storage/logs
+47G	/root/autodl-tmp
+47G	/root/autodl-tmp/star_v2_storage
+47G	/root/autodl-tmp/star_v2_storage/results

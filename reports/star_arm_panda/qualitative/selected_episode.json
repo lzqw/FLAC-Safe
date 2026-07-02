@@ -1,0 +1,229 @@
+{
+  "episode_comparison": [
+    {
+      "action_scale": 0.03,
+      "checkpoint_path": "/root/autodl-tmp/star_v2_storage/results/star_arm_panda/final/SafetyPandaReachObstacle-v0/sac_lag/panda_final_star_cfg2_sac_lag_s11/checkpoint/final.torch",
+      "episode_cost": 10.0,
+      "episode_length": 12,
+      "episode_return": -1.6003499831259245,
+      "episode_rng_seed": 613723922,
+      "eval_seed": 900078,
+      "goal_pos": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "method": "sac_lag",
+      "method_label": "SAC-Lag",
+      "min_clearance": -0.0839823941886425,
+      "mode": "raw",
+      "obstacle_pos": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "obstacle_radius": 0.07,
+      "path_length": 0.4539886973798275,
+      "run_name": "panda_final_star_cfg2_sac_lag_s11",
+      "safe_margin": 0.13,
+      "start_pos": [
+        0.44981759786605835,
+        -0.1642124503850937,
+        0.2574579119682312
+      ],
+      "success": 1.0,
+      "train_seed": 11,
+      "violation_rate": 0.8333333333333334
+    },
+    {
+      "action_scale": 0.03,
+      "checkpoint_path": "/root/autodl-tmp/star_v2_storage/results/star_arm_panda/final/SafetyPandaReachObstacle-v0/current_only_v2/panda_final_star_cfg2_current_only_v2_s11/checkpoint/final.torch",
+      "episode_cost": 10.0,
+      "episode_length": 13,
+      "episode_return": -1.5605122923851011,
+      "episode_rng_seed": 1460226829,
+      "eval_seed": 900078,
+      "goal_pos": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "method": "current_only_v2",
+      "method_label": "Current-only-N",
+      "min_clearance": -0.11236829787492753,
+      "mode": "raw",
+      "obstacle_pos": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "obstacle_radius": 0.07,
+      "path_length": 0.4054164048284292,
+      "run_name": "panda_final_star_cfg2_current_only_v2_s11",
+      "safe_margin": 0.13,
+      "start_pos": [
+        0.44981759786605835,
+        -0.1642124503850937,
+        0.2574579119682312
+      ],
+      "success": 1.0,
+      "train_seed": 11,
+      "violation_rate": 0.7692307692307693
+    },
+    {
+      "action_scale": 0.03,
+      "checkpoint_path": "/root/autodl-tmp/star_v2_storage/results/star_arm_panda/showcase_mechanism/SafetyPandaReachObstacle-v0/star_v2/panda_showcase_refcorridor_star_v2_s30/checkpoint/final.torch",
+      "episode_cost": 12.0,
+      "episode_length": 100,
+      "episode_return": -7.991909153796731,
+      "episode_rng_seed": 1344085716,
+      "eval_seed": 900078,
+      "goal_pos": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "method": "star_v2",
+      "method_label": "STAR",
+      "min_clearance": -0.07658412411808968,
+      "mode": "raw",
+      "obstacle_pos": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "obstacle_radius": 0.07,
+      "path_length": 0.48316883412951483,
+      "run_name": "panda_showcase_refcorridor_star_v2_s30",
+      "safe_margin": 0.13,
+      "start_pos": [
+        0.44981759786605835,
+        -0.1642124503850937,
+        0.2574579119682312
+      ],
+      "success": 0.0,
+      "train_seed": 30,
+      "violation_rate": 0.12
+    },
+    {
+      "action_scale": 0.03,
+      "checkpoint_path": "/root/autodl-tmp/star_v2_storage/results/star_arm_panda/showcase_mechanism/SafetyPandaReachObstacle-v0/star_v2/panda_showcase_refcorridor_star_v2_s30/checkpoint/final.torch",
+      "episode_cost": 0.0,
+      "episode_length": 21,
+      "episode_return": -4.632143808677794,
+      "episode_rng_seed": 1881533092,
+      "eval_seed": 900078,
+      "goal_pos": [
+        0.5354727506637573,
+        0.21935629844665527,
+        0.2566889226436615
+      ],
+      "method": "star_v2",
+      "method_label": "STAR+Exec",
+      "min_clearance": 0.039644117355346675,
+      "mode": "star_exec",
+      "obstacle_pos": [
+        0.5185362696647644,
+        -0.014137590304017067,
+        0.23638781905174255
+      ],
+      "obstacle_radius": 0.07,
+      "path_length": 0.745732344686985,
+      "run_name": "panda_showcase_refcorridor_star_v2_s30",
+      "safe_margin": 0.13,
+      "start_pos": [
+        0.44981759786605835,
+        -0.1642124503850937,
+        0.2574579119682312
+      ],
+      "success": 1.0,
+      "train_seed": 30,
+      "violation_rate": 0.0
+    }
+  ],
+  "outputs": {
+    "audit_snapshot_csv": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/qualitative/audit_snapshot.csv",
+    "candidate_episodes_csv": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/qualitative/candidate_episodes.csv",
+    "candidate_states_csv": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/qualitative/candidate_states.csv",
+    "trajectory_rows_csv": "/root/FLAC-Safe-star-v2/reports/star_arm_panda/qualitative/trajectory_rows.csv"
+  },
+  "selected_eval_seed": 900078,
+  "selected_state": {
+    "action_candidate_spread": 0.0,
+    "action_scale": 0.03,
+    "actor_mean_action_x": -0.134720578789711,
+    "actor_mean_action_y": 0.45107051730155945,
+    "actor_mean_action_z": -0.09256414324045181,
+    "actor_mean_endpoint_x": 0.583581144362688,
+    "actor_mean_endpoint_y": 0.19542160481214524,
+    "actor_mean_endpoint_z": 0.24537902720272542,
+    "any_shadow_predicted_unsafe": 0.0,
+    "audit_items_json": "[{\"action_x\": -0.134720578789711, \"action_y\": 0.45107051730155945, \"action_z\": -0.09256414324045181, \"beta\": 1.0, \"candidate_index\": 0, \"candidate_type\": \"actor_mean\", \"endpoint_x\": 0.583581144362688, \"endpoint_y\": 0.19542160481214524, \"endpoint_z\": 0.24537902720272542, \"executed\": 1.0, \"q_cost\": 0.025621959939599037, \"risky\": 0.0, \"sample\": -1, \"stratum\": -1}, {\"action_x\": -0.934596598148346, \"action_y\": 0.3322288691997528, \"action_z\": 0.8411633372306824, \"beta\": 1.0, \"candidate_index\": 0, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5595848637819291, \"endpoint_y\": 0.19185635536909104, \"endpoint_z\": 0.27339085161685944, \"executed\": 0.0, \"q_cost\": -0.035887461155653, \"risky\": 0.0, \"sample\": 0, \"stratum\": 0}, {\"action_x\": -0.8373117446899414, \"action_y\": 0.4616486132144928, \"action_z\": 0.962205171585083, \"beta\": 1.0, \"candidate_index\": 1, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5625034093856811, \"endpoint_y\": 0.19573894768953323, \"endpoint_z\": 0.27702210664749144, \"executed\": 0.0, \"q_cost\": -0.034638114273548126, \"risky\": 0.0, \"sample\": 0, \"stratum\": 1}, {\"action_x\": -0.6209225654602051, \"action_y\": -0.6884291768074036, \"action_z\": 0.8517685532569885, \"beta\": 1.0, \"candidate_index\": 2, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5689950847625732, \"endpoint_y\": 0.16123661398887634, \"endpoint_z\": 0.27370900809764864, \"executed\": 0.0, \"q_cost\": 0.08479835093021393, \"risky\": 1.0, \"sample\": 0, \"stratum\": 2}, {\"action_x\": -0.9771831631660461, \"action_y\": 0.9174271821975708, \"action_z\": 0.060138680040836334, \"beta\": 1.0, \"candidate_index\": 3, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.558307266831398, \"endpoint_y\": 0.20941230475902556, \"endpoint_z\": 0.24996011190116404, \"executed\": 0.0, \"q_cost\": -0.030676238238811493, \"risky\": 0.0, \"sample\": 0, \"stratum\": 3}, {\"action_x\": -0.816942572593689, \"action_y\": -0.9121365547180176, \"action_z\": 0.2207944244146347, \"beta\": 1.0, \"candidate_index\": 4, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5631144845485687, \"endpoint_y\": 0.15452539265155793, \"endpoint_z\": 0.254779784232378, \"executed\": 0.0, \"q_cost\": 0.2355920970439911, \"risky\": 1.0, \"sample\": 0, \"stratum\": 4}, {\"action_x\": 0.6447949409484863, \"action_y\": 0.6020782589912415, \"action_z\": 0.2847190201282501, \"beta\": 1.0, \"candidate_index\": 5, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.606966609954834, \"endpoint_y\": 0.1999518370628357, \"endpoint_z\": 0.2566975221037865, \"executed\": 0.0, \"q_cost\": 0.09039142727851868, \"risky\": 1.0, \"sample\": 0, \"stratum\": 5}, {\"action_x\": 0.4502865970134735, \"action_y\": -0.5234099626541138, \"action_z\": -0.6436796188354492, \"beta\": 1.0, \"candidate_index\": 6, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.6011313596367835, \"endpoint_y\": 0.16618719041347504, \"endpoint_z\": 0.22884556293487548, \"executed\": 0.0, \"q_cost\": 0.5452471375465393, \"risky\": 1.0, \"sample\": 0, \"stratum\": 6}, {\"action_x\": -0.2891579568386078, \"action_y\": -0.6483194231987, \"action_z\": -0.7493818998336792, \"beta\": 1.0, \"candidate_index\": 7, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5789480230212212, \"endpoint_y\": 0.16243990659713745, \"endpoint_z\": 0.2256744945049286, \"executed\": 0.0, \"q_cost\": 0.3794819414615631, \"risky\": 1.0, \"sample\": 0, \"stratum\": 7}, {\"action_x\": -0.2653174102306366, \"action_y\": 0.8970566987991333, \"action_z\": -0.3606889545917511, \"beta\": 1.0, \"candidate_index\": 8, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5796632394194603, \"endpoint_y\": 0.20880119025707244, \"endpoint_z\": 0.23733528286218644, \"executed\": 0.0, \"q_cost\": 0.016728969290852547, \"risky\": 0.0, \"sample\": 0, \"stratum\": 8}, {\"action_x\": -0.9501039385795593, \"action_y\": -0.6133439540863037, \"action_z\": 0.15341229736804962, \"beta\": 1.0, \"candidate_index\": 9, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5591196435689926, \"endpoint_y\": 0.16348917067050933, \"endpoint_z\": 0.25275832042098045, \"executed\": 0.0, \"q_cost\": 0.07938040792942047, \"risky\": 1.0, \"sample\": 0, \"stratum\": 9}, {\"action_x\": 0.4570181369781494, \"action_y\": 0.2575456500053406, \"action_z\": -0.2631884813308716, \"beta\": 1.0, \"candidate_index\": 10, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.6013333058357239, \"endpoint_y\": 0.18961585879325868, \"endpoint_z\": 0.2402602970600128, \"executed\": 0.0, \"q_cost\": 0.16717764735221863, \"risky\": 1.0, \"sample\": 0, \"stratum\": 10}, {\"action_x\": -0.991156280040741, \"action_y\": 0.8139733076095581, \"action_z\": -0.16775855422019958, \"beta\": 1.0, \"candidate_index\": 11, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5578880733251572, \"endpoint_y\": 0.2063086885213852, \"endpoint_z\": 0.24312319487333298, \"executed\": 0.0, \"q_cost\": -0.023440957069396973, \"risky\": 0.0, \"sample\": 0, \"stratum\": 11}, {\"action_x\": 0.6113651990890503, \"action_y\": 0.9568094611167908, \"action_z\": 0.13697174191474915, \"beta\": 1.0, \"candidate_index\": 12, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.6059637176990509, \"endpoint_y\": 0.21059377312660216, \"endpoint_z\": 0.2522651037573814, \"executed\": 0.0, \"q_cost\": 0.07042995095252991, \"risky\": 1.0, \"sample\": 0, \"stratum\": 12}, {\"action_x\": -0.5652482509613037, \"action_y\": -0.2785758078098297, \"action_z\": -0.5580445528030396, \"beta\": 1.0, \"candidate_index\": 13, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5706653141975403, \"endpoint_y\": 0.17353221505880356, \"endpoint_z\": 0.23141461491584778, \"executed\": 0.0, \"q_cost\": 0.1725257933139801, \"risky\": 1.0, \"sample\": 0, \"stratum\": 13}, {\"action_x\": -0.034961119294166565, \"action_y\": 0.9671185612678528, \"action_z\": -0.6579450964927673, \"beta\": 1.0, \"candidate_index\": 14, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5865739281475544, \"endpoint_y\": 0.21090304613113403, \"endpoint_z\": 0.22841759860515595, \"executed\": 0.0, \"q_cost\": 0.06823611259460449, \"risky\": 1.0, \"sample\": 0, \"stratum\": 14}, {\"action_x\": 0.2975082993507385, \"action_y\": 0.8576038479804993, \"action_z\": -0.2163497507572174, \"beta\": 1.0, \"candidate_index\": 15, \"candidate_type\": \"current_only\", \"endpoint_x\": 0.5965480107069016, \"endpoint_y\": 0.20761760473251342, \"endpoint_z\": 0.24166545897722244, \"executed\": 0.0, \"q_cost\": 0.06616386771202087, \"risky\": 1.0, \"sample\": 0, \"stratum\": 15}, {\"action_x\": -0.8676694631576538, \"action_y\": 0.17677396535873413, \"action_z\": 0.8601717948913574, \"beta\": 0.0625, \"candidate_index\": 0, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5615926778316498, \"endpoint_y\": 0.18719270825386047, \"endpoint_z\": 0.27396110534667967, \"executed\": 0.0, \"q_cost\": -0.0342521145939827, \"risky\": 0.0, \"sample\": 0, \"stratum\": 0}, {\"action_x\": -0.6680814027786255, \"action_y\": 0.3326093852519989, \"action_z\": 0.964301586151123, \"beta\": 0.125, \"candidate_index\": 1, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5675803196430206, \"endpoint_y\": 0.19186777085065843, \"endpoint_z\": 0.27708499908447265, \"executed\": 0.0, \"q_cost\": -0.03195882961153984, \"risky\": 0.0, \"sample\": 0, \"stratum\": 1}, {\"action_x\": -0.2869907021522522, \"action_y\": -0.7629387974739075, \"action_z\": 0.8668884634971619, \"beta\": 0.1875, \"candidate_index\": 2, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5790130406618118, \"endpoint_y\": 0.15900132536888123, \"endpoint_z\": 0.2741626054048538, \"executed\": 0.0, \"q_cost\": 0.17809197306632996, \"risky\": 1.0, \"sample\": 0, \"stratum\": 2}, {\"action_x\": -0.9632192850112915, \"action_y\": 0.8961477279663086, \"action_z\": 0.16054774820804596, \"beta\": 0.25, \"candidate_index\": 3, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5587261831760406, \"endpoint_y\": 0.2087739211320877, \"endpoint_z\": 0.2529723839461803, \"executed\": 0.0, \"q_cost\": -0.03306189924478531, \"risky\": 0.0, \"sample\": 0, \"stratum\": 3}, {\"action_x\": -0.676193356513977, \"action_y\": -0.9329645037651062, \"action_z\": 0.30195191502571106, \"beta\": 0.3125, \"candidate_index\": 4, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5673369610309601, \"endpoint_y\": 0.15390055418014525, \"endpoint_z\": 0.2572145089507103, \"executed\": 0.0, \"q_cost\": 0.2500627040863037, \"risky\": 1.0, \"sample\": 0, \"stratum\": 4}, {\"action_x\": 0.84159916639328, \"action_y\": 0.5287492871284485, \"action_z\": 0.3537651598453522, \"beta\": 0.375, \"candidate_index\": 5, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.6128707367181778, \"endpoint_y\": 0.1977519679069519, \"endpoint_z\": 0.25876890629529953, \"executed\": 0.0, \"q_cost\": 0.1265140026807785, \"risky\": 1.0, \"sample\": 0, \"stratum\": 5}, {\"action_x\": 0.7051281929016113, \"action_y\": -0.596983790397644, \"action_z\": -0.5804336667060852, \"beta\": 0.4375, \"candidate_index\": 6, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.6087766075134278, \"endpoint_y\": 0.16397997558116914, \"endpoint_z\": 0.2307429414987564, \"executed\": 0.0, \"q_cost\": 0.762424111366272, \"risky\": 1.0, \"sample\": 0, \"stratum\": 6}, {\"action_x\": -0.0022727211471647024, \"action_y\": -0.7009872794151306, \"action_z\": -0.7043375968933105, \"beta\": 0.5, \"candidate_index\": 7, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5875545800919645, \"endpoint_y\": 0.16085987091064452, \"endpoint_z\": 0.22702582359313966, \"executed\": 0.0, \"q_cost\": 0.4666628837585449, \"risky\": 1.0, \"sample\": 0, \"stratum\": 7}, {\"action_x\": -0.011796463280916214, \"action_y\": 0.8823044300079346, \"action_z\": -0.2986043095588684, \"beta\": 0.5625, \"candidate_index\": 8, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.587268867827952, \"endpoint_y\": 0.20835862219333648, \"endpoint_z\": 0.2391978222131729, \"executed\": 0.0, \"q_cost\": 0.03457610309123993, \"risky\": 0.0, \"sample\": 0, \"stratum\": 8}, {\"action_x\": -0.9340060353279114, \"action_y\": -0.6564685106277466, \"action_z\": 0.20078402757644653, \"beta\": 0.625, \"candidate_index\": 9, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.559602580666542, \"endpoint_y\": 0.16219543397426606, \"endpoint_z\": 0.25417947232723237, \"executed\": 0.0, \"q_cost\": 0.08908966183662415, \"risky\": 1.0, \"sample\": 0, \"stratum\": 9}, {\"action_x\": 0.6115773916244507, \"action_y\": 0.20462685823440552, \"action_z\": -0.2180156707763672, \"beta\": 0.6875, \"candidate_index\": 10, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.6059700834751129, \"endpoint_y\": 0.1880282950401306, \"endpoint_z\": 0.24161548137664796, \"executed\": 0.0, \"q_cost\": 0.19987809658050537, \"risky\": 1.0, \"sample\": 0, \"stratum\": 10}, {\"action_x\": -0.9898912310600281, \"action_y\": 0.7994416952133179, \"action_z\": -0.13158360123634338, \"beta\": 0.75, \"candidate_index\": 11, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5579260247945785, \"endpoint_y\": 0.205872740149498, \"endpoint_z\": 0.24420844346284867, \"executed\": 0.0, \"q_cost\": -0.02479662001132965, \"risky\": 0.0, \"sample\": 0, \"stratum\": 11}, {\"action_x\": 0.6895738840103149, \"action_y\": 0.9542733430862427, \"action_z\": 0.161040797829628, \"beta\": 0.8125, \"candidate_index\": 12, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.6083099782466889, \"endpoint_y\": 0.21051768958568573, \"endpoint_z\": 0.2529871754348278, \"executed\": 0.0, \"q_cost\": 0.08089703321456909, \"risky\": 1.0, \"sample\": 0, \"stratum\": 12}, {\"action_x\": -0.5170364379882812, \"action_y\": -0.29996412992477417, \"action_z\": -0.5429561138153076, \"beta\": 0.875, \"candidate_index\": 13, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5721116685867309, \"endpoint_y\": 0.17289056539535522, \"endpoint_z\": 0.23186726808547975, \"executed\": 0.0, \"q_cost\": 0.1785307079553604, \"risky\": 1.0, \"sample\": 0, \"stratum\": 13}, {\"action_x\": 0.004154583904892206, \"action_y\": 0.9664915800094604, \"action_z\": -0.651447057723999, \"beta\": 0.9375, \"candidate_index\": 14, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5877473992435261, \"endpoint_y\": 0.21088423669338227, \"endpoint_z\": 0.228612539768219, \"executed\": 0.0, \"q_cost\": 0.0722307562828064, \"risky\": 1.0, \"sample\": 0, \"stratum\": 14}, {\"action_x\": 0.2975082993507385, \"action_y\": 0.8576038479804993, \"action_z\": -0.2163497507572174, \"beta\": 1.0, \"candidate_index\": 15, \"candidate_type\": \"corridor_shadow\", \"endpoint_x\": 0.5965480107069016, \"endpoint_y\": 0.20761760473251342, \"endpoint_z\": 0.24166545897722244, \"executed\": 0.0, \"q_cost\": 0.06616386771202087, \"risky\": 1.0, \"sample\": 0, \"stratum\": 15}]",
+    "candidate_count": 1.0,
+    "checkpoint_path": "/root/autodl-tmp/star_v2_storage/results/star_arm_panda/showcase_mechanism/SafetyPandaReachObstacle-v0/star_v2/panda_showcase_refcorridor_star_v2_s30/checkpoint/final.torch",
+    "clearance_keepout": 0.07817792453108888,
+    "clearance_obstacle": 0.13817792453108887,
+    "collision": 0.0,
+    "corridor_lift": 0.21535199880599976,
+    "corridor_q_max": 0.762424111366272,
+    "corridor_q_mean": 0.14881578087806702,
+    "corridor_q_min": -0.0342521145939827,
+    "cost": 0.0,
+    "current_q_max": 0.5452471375465393,
+    "current_q_mean": 0.11571942269802094,
+    "current_q_min": -0.035887461155653,
+    "distance_to_goal": 0.06477805972099304,
+    "distance_to_obstacle": 0.20817792453108888,
+    "ee_x": 0.5876227617263794,
+    "ee_y": 0.18188948929309845,
+    "ee_z": 0.24815595149993896,
+    "episode_cost": 12.0,
+    "episode_min_clearance": -0.07020644202828408,
+    "episode_return": -2.3759489375352865,
+    "episode_rng_seed": 1344085716,
+    "episode_success": 1.0,
+    "eval_seed": 900078,
+    "execution_fallback": 0.0,
+    "execution_mode": "raw",
+    "goal_pos": [
+      0.5354727506637573,
+      0.21935629844665527,
+      0.2566889226436615
+    ],
+    "has_action_diagnostics": 1.0,
+    "hidden_risky_shadow": 1.0,
+    "high_risk_shadow_not_executed": 1.0,
+    "mean_action_predicted_risk": 0.025621959939599037,
+    "mean_action_risk": 0.025621959939599037,
+    "method": "star_v2",
+    "method_label": "STAR",
+    "mode": "raw",
+    "obstacle_pos": [
+      0.5185362696647644,
+      -0.014137590304017067,
+      0.23638781905174255
+    ],
+    "obstacle_radius": 0.07,
+    "rho_cor": 0.6239330768585205,
+    "rho_cur": 0.40858107805252075,
+    "run_name": "panda_showcase_refcorridor_star_v2_s30",
+    "safe_candidate_fraction": 0.0,
+    "safe_margin": 0.13,
+    "selected_from_mean": 1.0,
+    "selected_predicted_reward": 0.3613435626029968,
+    "selected_predicted_risk": 0.025621959939599037,
+    "shadow_predicted_unsafe_fraction": 0.0,
+    "start_pos": [
+      0.44981759786605835,
+      -0.1642124503850937,
+      0.2574579119682312
+    ],
+    "step": 16,
+    "success": 0.0,
+    "threshold": 0.05,
+    "train_seed": 30
+  },
+  "selected_step": 16,
+  "selected_train_seed": 30,
+  "selection_rule": "highest hidden_risky_shadow, actor-mean safe, positive corridor lift, high max corridor risk, near boundary"
+}

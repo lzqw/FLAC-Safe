@@ -1,0 +1,10 @@
+STAR_STORAGE_ROOT=/root/autodl-tmp/star_v2_storage
+TMPDIR=/root/autodl-tmp/star_v2_storage/tmp
+TORCH_HOME=/root/autodl-tmp/star_v2_storage/cache/torch
+MPLCONFIGDIR=/root/autodl-tmp/star_v2_storage/cache/matplotlib
+XDG_CACHE_HOME=/root/autodl-tmp/star_v2_storage/cache/xdg
+results -> /root/autodl-tmp/star_v2_storage/results
+logs -> /root/autodl-tmp/star_v2_storage/logs
+Filesystem      Size  Used Avail Use% Mounted on
+overlay          30G   28G  3.0G  91% /
+/dev/md127       50G   47G  3.4G  94% /root/autodl-tmp
