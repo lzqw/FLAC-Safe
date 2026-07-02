@@ -1,18 +1,18 @@
 # STAR 1M Curves Status
 
-Updated: `2026-07-02 23:35:06`
+Updated: `2026-07-02 23:51:24`
 
 ## stage_a_star
 `pending`=9 `running`=6
 
 | task | method | seed | status | max_step | errors |
 |---|---:|---:|---|---:|---|
-| PointGoal1 | STAR | 0 | running | 20000 |  |
-| PointGoal1 | STAR | 1 | running | 19000 |  |
-| PointGoal1 | STAR | 2 | running | 19000 |  |
-| PointGoal1 | STAR | 3 | running | 19000 |  |
-| PointGoal1 | STAR | 4 | running | 20000 |  |
-| CarGoal1 | STAR | 0 | running | 19000 |  |
+| PointGoal1 | STAR | 0 | running | 8000 |  |
+| PointGoal1 | STAR | 1 | running | 8000 |  |
+| PointGoal1 | STAR | 2 | running | 8000 |  |
+| PointGoal1 | STAR | 3 | running | 8000 |  |
+| PointGoal1 | STAR | 4 | running | 8000 |  |
+| CarGoal1 | STAR | 0 | running | 8000 |  |
 | CarGoal1 | STAR | 1 | pending | 0 |  |
 | CarGoal1 | STAR | 2 | pending | 0 |  |
 | CarGoal1 | STAR | 3 | pending | 0 |  |
@@ -42,7 +42,7 @@ Updated: `2026-07-02 23:35:06`
 
 ```
 bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
-Thu Jul  2 23:35:07 2026
+Thu Jul  2 23:51:24 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.76.05              Driver Version: 580.76.05      CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -51,11 +51,11 @@ Thu Jul  2 23:35:07 2026
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
 |   0  NVIDIA vGPU-48GB               On  |   00000000:18:00.0 Off |                  Off |
-| 62%   61C    P2            167W /  450W |    2503MiB /  24564MiB |     77%      Default |
+| 63%   63C    P2            176W /  450W |    2503MiB /  24564MiB |     97%      Default |
 |                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 |   1  NVIDIA vGPU-48GB               On  |   00000000:39:00.0 Off |                  Off |
-| 54%   60C    P2            169W /  450W |    2503MiB /  24564MiB |     97%      Default |
+| 54%   61C    P2            169W /  450W |    2503MiB /  24564MiB |     96%      Default |
 |                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 
@@ -64,19 +64,19 @@ Thu Jul  2 23:35:07 2026
 |  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
 |        ID   ID                                                               Usage      |
 |=========================================================================================|
-|    0   N/A  N/A           74003      C   ...niconda3/envs/flac/bin/python        828MiB |
-|    0   N/A  N/A           74034      C   ...niconda3/envs/flac/bin/python        828MiB |
-|    0   N/A  N/A           74056      C   ...niconda3/envs/flac/bin/python        828MiB |
-|    1   N/A  N/A           74029      C   ...niconda3/envs/flac/bin/python        828MiB |
-|    1   N/A  N/A           74043      C   ...niconda3/envs/flac/bin/python        828MiB |
-|    1   N/A  N/A           74065      C   ...niconda3/envs/flac/bin/python        828MiB |
+|    0   N/A  N/A           80170      C   ...niconda3/envs/flac/bin/python        828MiB |
+|    0   N/A  N/A           80223      C   ...niconda3/envs/flac/bin/python        828MiB |
+|    0   N/A  N/A           80243      C   ...niconda3/envs/flac/bin/python        828MiB |
+|    1   N/A  N/A           80218      C   ...niconda3/envs/flac/bin/python        828MiB |
+|    1   N/A  N/A           80232      C   ...niconda3/envs/flac/bin/python        828MiB |
+|    1   N/A  N/A           80256      C   ...niconda3/envs/flac/bin/python        828MiB |
 +-----------------------------------------------------------------------------------------+
 Filesystem      Size  Used Avail Use% Mounted on
-overlay          30G   28G  2.3G  93% /
+overlay          30G   28G  2.2G  93% /
 /dev/md127      7.0T  6.8T  220G  97% /autodl-pub
 AutoFS:fs1      4.0T  2.6T  1.5T  65% /autodl-pub/data
 tmpfs            64M     0   64M   0% /dev
-shm              90G     0   90G   0% /dev/shm
+shm              90G  120K   90G   1% /dev/shm
 /dev/nvme0n1p2  1.8T   16G  1.7T   1% /usr/bin/nvidia-smi
 tmpfs           504G   12K  504G   1% /proc/driver/nvidia
 tmpfs           504G  4.0K  504G   1% /etc/nvidia/nvidia-application-profiles-rc.d

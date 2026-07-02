@@ -46,8 +46,8 @@ THREAD_ENV = {
     "WANDB_MODE": "disabled",
     "MUJOCO_GL": "egl",
     "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
-    "STAR_STORAGE_ROOT": "/root/autodl-tmp/star_v2_storage",
-    "TMPDIR": "/root/autodl-tmp/star_v2_storage/tmp",
+    "STAR_STORAGE_ROOT": "/dev/shm/star_v2_storage",
+    "TMPDIR": "/dev/shm/star_v2_storage/tmp",
     "TORCH_HOME": "/root/autodl-tmp/star_v2_storage/cache/torch",
     "MPLCONFIGDIR": "/root/autodl-tmp/star_v2_storage/cache/matplotlib",
     "XDG_CACHE_HOME": "/root/autodl-tmp/star_v2_storage/cache/xdg",
@@ -96,7 +96,7 @@ def ensure_dirs() -> None:
         RESULT_ROOT,
     ]:
         path.mkdir(parents=True, exist_ok=True)
-    storage = Path(os.environ.get("STAR_STORAGE_ROOT", "/root/autodl-tmp/star_v2_storage"))
+    storage = Path(os.environ.get("STAR_STORAGE_ROOT", "/dev/shm/star_v2_storage"))
     for name in ("results", "logs", "tmp", "cache"):
         (storage / name).mkdir(parents=True, exist_ok=True)
 
@@ -211,8 +211,8 @@ def build_main_star_command(spec: RunSpec, device: int) -> list[str]:
         "online_eval_mode": "none",
         "disable_wandb": True,
         "save": True,
-        "save_training_state": True,
-        "save_interval_steps": 200000,
+        "save_training_state": False,
+        "save_interval_steps": 0,
         "final_checkpoint": True,
         "metric_log_interval_steps": 10000,
         "mechanism_log_interval_steps": 10000,
