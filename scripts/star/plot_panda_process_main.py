@@ -120,6 +120,17 @@ def draw_process_mini(ax, star: pd.DataFrame, step: int, label: str, *, audit: b
     add_geometry(ax, row, compact=True)
     ax.plot(star["p_gripper_x"], star["p_gripper_y"], color="#C9A6C4", lw=0.8, alpha=0.38, zorder=3)
     ax.plot(upto["p_gripper_x"], upto["p_gripper_y"], color=STAR_COLOR, lw=1.7, zorder=4)
+    if label != "Start" and len(upto) >= 2:
+        arrow_points = upto.tail(3)
+        tail = arrow_points.iloc[0]
+        head = arrow_points.iloc[-1]
+        ax.annotate(
+            "",
+            xy=(head["p_gripper_x"], head["p_gripper_y"]),
+            xytext=(tail["p_gripper_x"], tail["p_gripper_y"]),
+            arrowprops=dict(arrowstyle="-|>", lw=1.25, color=STAR_COLOR, shrinkA=0, shrinkB=0),
+            zorder=9,
+        )
     ax.scatter(row["p_gripper_x"], row["p_gripper_y"], c=STAR_COLOR, s=38, zorder=10)
     ax.plot(
         [row["p_left_finger_x"], row["p_right_finger_x"]],
@@ -146,7 +157,7 @@ def plot_process_strip(fig: plt.Figure, outer_spec, star: pd.DataFrame, audit_su
     first_ax.text(
         -0.18,
         1.22,
-        "(a) Gripper execution process",
+        "(a) Execution process",
         transform=first_ax.transAxes,
         fontsize=10.5,
         fontweight="bold",
@@ -212,20 +223,20 @@ def plot_audit_panel(ax, traj: pd.DataFrame, audit_rows: pd.DataFrame, audit_jso
         ax.scatter(mean["endpoint_x"], mean["endpoint_y"], marker="*", c=ACTOR_COLOR, s=95, zorder=10)
 
     ax.text(
-        0.03,
-        0.97,
-        "$Q_{mean}=0.026 \\leq 0.05$\nmax shadow $Q=0.762$\nnot executed",
+        0.04,
+        0.30,
+        "mean Q=0.026 <= 0.05\nmax shadow Q=0.762\nnot executed",
         transform=ax.transAxes,
-        va="top",
+        va="bottom",
         ha="left",
-        fontsize=8.3,
+        fontsize=8.2,
         bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#DDDDDD", lw=0.5, alpha=0.92),
     )
     ax.set_title("(b) Local STAR audit at $t=16$")
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
-    ax.set_xlim(0.48, 0.63)
-    ax.set_ylim(0.10, 0.25)
+    ax.set_xlim(0.45, 0.64)
+    ax.set_ylim(-0.08, 0.25)
     cbar = ax.figure.colorbar(sc, ax=ax, fraction=0.046, pad=0.018)
     cbar.set_label("$Q_C^+$", fontsize=8)
     return audit_json
@@ -246,9 +257,9 @@ def plot_clearance_panel(ax, traj: pd.DataFrame, audit_json: dict) -> None:
         arrowprops=dict(arrowstyle="->", lw=0.7, color="#555555"),
     )
     ax.text(
-        0.58,
-        0.12,
-        f"lift={audit_json['corridor_lift']:.3f}\nsuccess, cost=0",
+        0.72,
+        0.17,
+        "success, cost=0",
         transform=ax.transAxes,
         fontsize=8.5,
         bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#DDDDDD", lw=0.5, alpha=0.92),
@@ -272,7 +283,7 @@ def write_caption(audit_json: dict) -> None:
         "(c) Clearance to the keep-out boundary remains positive after the audit step; the dashed line marks the unsafe boundary. "
         "This is a qualitative mechanism visualization, not a standalone Panda benchmark claim."
     )
-    (FIG_ROOT / "fig_panda_process_main_caption.tex").write_text(caption + "\n")
+    (FIG_ROOT / "fig_panda_process_main_final_caption.tex").write_text(caption + "\n")
 
 
 def main() -> None:
@@ -294,7 +305,7 @@ def main() -> None:
     ax_clearance = fig.add_subplot(gs[1, 1])
     plot_clearance_panel(ax_clearance, traj, audit_json)
 
-    base = FIG_ROOT / "fig_panda_process_main"
+    base = FIG_ROOT / "fig_panda_process_main_final"
     for suffix in ("png", "pdf", "svg"):
         fig.savefig(base.with_suffix(f".{suffix}"), bbox_inches="tight")
     plt.close(fig)
