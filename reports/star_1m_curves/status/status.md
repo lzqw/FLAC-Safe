@@ -1,18 +1,18 @@
 # STAR 1M Curves Status
 
-Updated: `2026-07-02 23:23:31`
+Updated: `2026-07-02 23:27:29`
 
 ## stage_a_star
 `pending`=9 `running`=6
 
 | task | method | seed | status | max_step | errors |
 |---|---:|---:|---|---:|---|
-| PointGoal1 | STAR | 0 | running | 6000 |  |
-| PointGoal1 | STAR | 1 | running | 6000 |  |
-| PointGoal1 | STAR | 2 | running | 6000 |  |
-| PointGoal1 | STAR | 3 | running | 6000 |  |
-| PointGoal1 | STAR | 4 | running | 6000 |  |
-| CarGoal1 | STAR | 0 | running | 6000 |  |
+| PointGoal1 | STAR | 0 | running | 11000 |  |
+| PointGoal1 | STAR | 1 | running | 11000 |  |
+| PointGoal1 | STAR | 2 | running | 11000 |  |
+| PointGoal1 | STAR | 3 | running | 10000 |  |
+| PointGoal1 | STAR | 4 | running | 11000 |  |
+| CarGoal1 | STAR | 0 | running | 10000 |  |
 | CarGoal1 | STAR | 1 | pending | 0 |  |
 | CarGoal1 | STAR | 2 | pending | 0 |  |
 | CarGoal1 | STAR | 3 | pending | 0 |  |
@@ -42,7 +42,7 @@ Updated: `2026-07-02 23:23:31`
 
 ```
 bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
-Thu Jul  2 23:23:31 2026
+Thu Jul  2 23:27:30 2026
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.76.05              Driver Version: 580.76.05      CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -51,11 +51,11 @@ Thu Jul  2 23:23:31 2026
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
 |   0  NVIDIA vGPU-48GB               On  |   00000000:18:00.0 Off |                  Off |
-| 46%   61C    P2            172W /  450W |    2503MiB /  24564MiB |     98%      Default |
+| 63%   61C    P2            155W /  450W |    2503MiB /  24564MiB |     85%      Default |
 |                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 |   1  NVIDIA vGPU-48GB               On  |   00000000:39:00.0 Off |                  Off |
-| 30%   57C    P2            163W /  450W |    2503MiB /  24564MiB |     96%      Default |
+| 53%   61C    P2            168W /  450W |    2503MiB /  24564MiB |     98%      Default |
 |                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 

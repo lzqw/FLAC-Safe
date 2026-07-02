@@ -167,8 +167,10 @@ def status_for_spec(spec: RunSpec, ps_text: str | None = None) -> str:
         return "completed"
     if is_running(spec, ps_text):
         return "running"
-    if max_train_step(spec) > 0 or latest_resume_checkpoint(spec) is not None:
+    if latest_resume_checkpoint(spec) is not None:
         return "partial"
+    if max_train_step(spec) > 0:
+        return "partial_no_checkpoint"
     return "pending"
 
 
@@ -405,7 +407,8 @@ def launch_pending(stages: set[str], max_new: int = 6) -> int:
             break
         if total + launched >= capacity:
             break
-        if status_for_spec(spec, ps_text) not in {"pending", "partial"}:
+        spec_status = status_for_spec(spec, ps_text)
+        if spec_status not in {"pending", "partial"}:
             continue
         gpu = min(GPU_SLOTS, key=lambda item: by_gpu[item])
         if by_gpu[gpu] >= GPU_SLOTS[gpu]:
