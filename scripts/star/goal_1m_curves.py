@@ -661,16 +661,30 @@ def package(_args: argparse.Namespace | None = None) -> None:
         REPORT_ROOT / "setup",
         REPORT_ROOT / "status",
         REPORT_ROOT / "curves",
+        REPORT_ROOT / "final",
         REPORT_ROOT / "figures",
         REPO / "scripts" / "star" / "goal_1m_curves.py",
         REPO / "scripts" / "star" / "collect_1m_curves.py",
         REPO / "scripts" / "star" / "plot_1m_curves.py",
+        REPO / "scripts" / "star" / "finalize_1m_curves.py",
     ]
     with tarfile.open(archive, "w:gz") as tar:
         for path in include:
             if path.exists():
                 tar.add(path, arcname=str(path.relative_to(REPO)))
     print(archive)
+
+
+def eval_final(args: argparse.Namespace) -> None:
+    cmd = [PYTHON, "scripts/star/finalize_1m_curves.py"]
+    if getattr(args, "run_eval", False):
+        cmd.append("--run-eval")
+    if getattr(args, "overwrite_derived", False):
+        cmd.append("--overwrite-derived")
+    if getattr(args, "eval_seeds", ""):
+        cmd.extend(["--eval-seeds", str(args.eval_seeds)])
+    proc = run(cmd)
+    print(proc.stdout)
 
 
 def main() -> None:
@@ -686,6 +700,13 @@ def main() -> None:
     plot_parser.add_argument("--star-only", action="store_true")
     plot_parser.add_argument("--core", action="store_true")
     sub.add_parser("package")
+    eval_parser = sub.add_parser("eval-final")
+    eval_parser.add_argument("--run-eval", action="store_true")
+    eval_parser.add_argument("--overwrite-derived", action="store_true")
+    eval_parser.add_argument(
+        "--eval-seeds",
+        default="100000,100001,100002,100003,100004,100005,100006,100007,100008,100009",
+    )
     launch_star_parser = sub.add_parser("launch-star")
     launch_star_parser.add_argument("--resume", action="store_true")
     launch_baselines1_parser = sub.add_parser("launch-baselines1")
@@ -722,6 +743,8 @@ def main() -> None:
         plot(args)
     elif args.command == "package":
         package(args)
+    elif args.command == "eval-final":
+        eval_final(args)
 
 
 if __name__ == "__main__":

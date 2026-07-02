@@ -1,48 +1,53 @@
 # STAR 1M Curves Status
 
-Updated: `2026-07-03 00:07:33`
+Updated: `2026-07-03 00:12:43`
+
+## Host Load
+
+- CPU loadavg: `27.05 27.74 28.30 18/9310 86444`
+- nproc: `40`
 
 ## stage_a_star
 `pending`=9 `running`=6
 
-| task | method | seed | status | max_step | errors |
-|---|---:|---:|---|---:|---|
-| PointGoal1 | STAR | 0 | running | 27000 |  |
-| PointGoal1 | STAR | 1 | running | 26000 |  |
-| PointGoal1 | STAR | 2 | running | 26000 |  |
-| PointGoal1 | STAR | 3 | running | 26000 |  |
-| PointGoal1 | STAR | 4 | running | 26000 |  |
-| CarGoal1 | STAR | 0 | running | 26000 |  |
-| CarGoal1 | STAR | 1 | pending | 0 |  |
-| CarGoal1 | STAR | 2 | pending | 0 |  |
-| CarGoal1 | STAR | 3 | pending | 0 |  |
-| CarGoal1 | STAR | 4 | pending | 0 |  |
-| PointPush1 | STAR | 0 | pending | 0 |  |
-| PointPush1 | STAR | 1 | pending | 0 |  |
-| PointPush1 | STAR | 2 | pending | 0 |  |
-| PointPush1 | STAR | 3 | pending | 0 |  |
-| PointPush1 | STAR | 4 | pending | 0 |  |
+| task | method | seed | status | max_step | recent steps/s | ETA h | errors |
+|---|---:|---:|---|---:|---:|---:|---|
+| PointGoal1 | STAR | 0 | running | 33000 | 19.09 | 14.07 |  |
+| PointGoal1 | STAR | 1 | running | 32000 | 18.98 | 14.17 |  |
+| PointGoal1 | STAR | 2 | running | 32000 | 19.05 | 14.12 |  |
+| PointGoal1 | STAR | 3 | running | 32000 | 19.04 | 14.12 |  |
+| PointGoal1 | STAR | 4 | running | 32000 | 18.34 | 14.66 |  |
+| CarGoal1 | STAR | 0 | running | 32000 | 18.83 | 14.28 |  |
+| CarGoal1 | STAR | 1 | pending | 0 |  |  |  |
+| CarGoal1 | STAR | 2 | pending | 0 |  |  |  |
+| CarGoal1 | STAR | 3 | pending | 0 |  |  |  |
+| CarGoal1 | STAR | 4 | pending | 0 |  |  |  |
+| PointPush1 | STAR | 0 | pending | 0 |  |  |  |
+| PointPush1 | STAR | 1 | pending | 0 |  |  |  |
+| PointPush1 | STAR | 2 | pending | 0 |  |  |  |
+| PointPush1 | STAR | 3 | pending | 0 |  |  |  |
+| PointPush1 | STAR | 4 | pending | 0 |  |  |  |
 
 ## stage_b_baselines1
 `pending`=9
 
-| task | method | seed | status | max_step | errors |
-|---|---:|---:|---|---:|---|
-| PointGoal1 | SAC-Lag | 0 | pending | 0 |  |
-| PointGoal1 | SAC-Lag | 1 | pending | 0 |  |
-| PointGoal1 | SAC-Lag | 2 | pending | 0 |  |
-| CarGoal1 | SAC-Lag | 0 | pending | 0 |  |
-| CarGoal1 | SAC-Lag | 1 | pending | 0 |  |
-| CarGoal1 | SAC-Lag | 2 | pending | 0 |  |
-| PointPush1 | SAC-Lag | 0 | pending | 0 |  |
-| PointPush1 | SAC-Lag | 1 | pending | 0 |  |
-| PointPush1 | SAC-Lag | 2 | pending | 0 |  |
+| task | method | seed | status | max_step | recent steps/s | ETA h | errors |
+|---|---:|---:|---|---:|---:|---:|---|
+| PointGoal1 | SAC-Lag | 0 | pending | 0 |  |  |  |
+| PointGoal1 | SAC-Lag | 1 | pending | 0 |  |  |  |
+| PointGoal1 | SAC-Lag | 2 | pending | 0 |  |  |  |
+| CarGoal1 | SAC-Lag | 0 | pending | 0 |  |  |  |
+| CarGoal1 | SAC-Lag | 1 | pending | 0 |  |  |  |
+| CarGoal1 | SAC-Lag | 2 | pending | 0 |  |  |  |
+| PointPush1 | SAC-Lag | 0 | pending | 0 |  |  |  |
+| PointPush1 | SAC-Lag | 1 | pending | 0 |  |  |  |
+| PointPush1 | SAC-Lag | 2 | pending | 0 |  |  |  |
 
 ## Resources
 
 ```
 bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
-Fri Jul  3 00:07:33 2026       
+Fri Jul  3 00:12:43 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.76.05              Driver Version: 580.76.05      CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -51,11 +56,11 @@ Fri Jul  3 00:07:33 2026
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
 |   0  NVIDIA vGPU-48GB               On  |   00000000:18:00.0 Off |                  Off |
-| 62%   62C    P2            179W /  450W |    2503MiB /  24564MiB |     97%      Default |
+| 63%   62C    P2            172W /  450W |    2503MiB /  24564MiB |     99%      Default |
 |                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 |   1  NVIDIA vGPU-48GB               On  |   00000000:39:00.0 Off |                  Off |
-| 53%   61C    P2            177W /  450W |    2503MiB /  24564MiB |     98%      Default |
+| 54%   60C    P2            162W /  450W |    2503MiB /  24564MiB |     96%      Default |
 |                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 
@@ -86,3 +91,4 @@ tmpfs           504G     0  504G   0% /proc/scsi
 tmpfs           504G     0  504G   0% /sys/firmware
 tmpfs           504G     0  504G   0% /sys/devices/virtual/powercap
 ```
+

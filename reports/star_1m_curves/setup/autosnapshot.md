@@ -6,4 +6,4 @@ Purpose: active 1M results are stored under `/dev/shm` to avoid filling the 50G 
 
 Interval: 300 seconds.
 
-Snapshot includes `reports/star_1m_curves/`, `scripts/star/goal_1m_curves.py`, `scripts/star/collect_1m_curves.py`, and `scripts/star/plot_1m_curves.py`. It intentionally excludes checkpoints and raw result directories.
+Snapshot includes `reports/star_1m_curves/`, `scripts/star/goal_1m_curves.py`, `scripts/star/collect_1m_curves.py`, `scripts/star/plot_1m_curves.py`, and `scripts/star/finalize_1m_curves.py`. It intentionally excludes checkpoints and raw result directories.
