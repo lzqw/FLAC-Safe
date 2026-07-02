@@ -1,0 +1,58 @@
+1M curve run started at Thu Jul  2 23:16:27 CST 2026
+autodl-container-5f5c489a58-eca64b30
+codex/star-v2-aaai-final
+23dc576ce6ecf8a0f668fea9b1d827521b7026f4
+?? logs
+?? results
+Python 3.11.15
+Thu Jul  2 23:16:27 2026
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.76.05              Driver Version: 580.76.05      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA vGPU-48GB               On  |   00000000:18:00.0 Off |                  Off |
+| 30%   36C    P8             15W /  450W |       0MiB /  24564MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA vGPU-48GB               On  |   00000000:39:00.0 Off |                  Off |
+| 30%   33C    P8             16W /  450W |       0MiB /  24564MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Filesystem      Size  Used Avail Use% Mounted on
+overlay          30G   28G  2.9G  91% /
+/dev/md127      7.0T  6.8T  221G  97% /autodl-pub
+AutoFS:fs1      4.0T  2.6T  1.5T  65% /autodl-pub/data
+tmpfs            64M     0   64M   0% /dev
+shm              90G     0   90G   0% /dev/shm
+/dev/nvme0n1p2  1.8T   16G  1.7T   1% /usr/bin/nvidia-smi
+tmpfs           504G   12K  504G   1% /proc/driver/nvidia
+tmpfs           504G  4.0K  504G   1% /etc/nvidia/nvidia-application-profiles-rc.d
+tmpfs           504G     0  504G   0% /proc/asound
+tmpfs           504G     0  504G   0% /proc/acpi
+tmpfs           504G     0  504G   0% /proc/scsi
+tmpfs           504G     0  504G   0% /sys/firmware
+tmpfs           504G     0  504G   0% /sys/devices/virtual/powercap
+lrwxrwxrwx 1 root root  37 Jul  2 10:22 logs -> /root/autodl-tmp/star_v2_storage/logs
+lrwxrwxrwx 1 root root  40 Jul  2 10:22 results -> /root/autodl-tmp/star_v2_storage/results
+
+reports:
+total 20K
+drwxr-xr-x  8 root root  170 Jul  2 23:16 .
+drwxr-xr-x 14 root root 4.0K Jul  2 10:26 ..
+drwxr-xr-x  2 root root   53 Jun 25 11:23 restart_after_reboot
+drwxr-xr-x  5 root root   63 Jul  2 23:16 star_1m_curves
+drwxr-xr-x 16 root root 4.0K Jul  2 20:28 star_arm_panda
+drwxr-xr-x  3 root root 4.0K Jun 25 11:23 star_goal
+drwxr-xr-x  2 root root 4.0K Jun 25 11:23 star_paper_support
+drwxr-xr-x 21 root root 4.0K Jun 30 23:29 star_v2_final

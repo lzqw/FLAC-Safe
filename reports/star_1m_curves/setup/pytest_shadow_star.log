@@ -1,0 +1,9 @@
+..........................                                               [100%]
+=============================== warnings summary ===============================
+tests/test_shadow_audit.py: 4 warnings
+tests/test_star_agent.py: 11 warnings
+  /root/miniconda3/envs/flac/lib/python3.11/site-packages/gymnasium/spaces/box.py:130: UserWarning: [33mWARN: Box bound precision lowered by casting to float32[0m
+    gym.logger.warn(f"Box bound precision lowered by casting to {self.dtype}")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+26 passed, 15 warnings in 3.51s
