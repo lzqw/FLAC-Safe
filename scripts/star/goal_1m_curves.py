@@ -35,7 +35,7 @@ UNAVAILABLE_METHODS = {
     "cpo": "CPO",
     "cspo": "CSPO",
 }
-GPU_SLOTS = {0: 3, 1: 3}
+GPU_SLOTS = {0: 3}
 THREAD_ENV = {
     "OMP_NUM_THREADS": "1",
     "MKL_NUM_THREADS": "1",
@@ -149,6 +149,29 @@ def max_train_step(spec: RunSpec) -> int:
         return 0
 
 
+def preserved_curve_max_step(spec: RunSpec) -> int:
+    path = REPORT_ROOT / "curves" / "training_curves_long.csv"
+    if not path.exists():
+        return 0
+    try:
+        import pandas as pd
+
+        df = pd.read_csv(path, usecols=["env_id", "method_key", "seed", "step"])
+    except Exception:
+        return 0
+    if df.empty:
+        return 0
+    df["seed"] = pd.to_numeric(df["seed"], errors="coerce")
+    df["step"] = pd.to_numeric(df["step"], errors="coerce")
+    df = df.dropna(subset=["seed", "step"])
+    if df.empty:
+        return 0
+    rows = df[(df["env_id"] == spec.env_id) & (df["method_key"] == spec.method) & (df["seed"].astype(int) == spec.seed)]
+    if rows.empty:
+        return 0
+    return int(rows["step"].max())
+
+
 def train_progress_stats(spec: RunSpec) -> dict[str, object]:
     path = spec.result_dir / "train_episodes.csv"
     empty = {
@@ -162,6 +185,9 @@ def train_progress_stats(spec: RunSpec) -> dict[str, object]:
         "train_cost_rate": "",
     }
     if not path.exists():
+        preserved = preserved_curve_max_step(spec)
+        if preserved:
+            empty["max_step"] = preserved
         return empty
     try:
         import pandas as pd
@@ -207,7 +233,7 @@ def train_progress_stats(spec: RunSpec) -> dict[str, object]:
 
 
 def is_complete(spec: RunSpec) -> bool:
-    return spec.final_checkpoint.exists() or max_train_step(spec) >= spec.steps
+    return spec.final_checkpoint.exists() or max_train_step(spec) >= spec.steps or preserved_curve_max_step(spec) >= spec.steps
 
 
 def ps_output() -> str:
@@ -284,6 +310,7 @@ def build_main_star_command(spec: RunSpec, device: int) -> list[str]:
         params["star_use_kl"] = False
         params["training_execution_mode"] = "raw"
         params["evaluation_execution_mode"] = "raw"
+        params.pop("selected_calibration_name", None)
     resume = latest_resume_checkpoint(spec)
     if resume and not is_complete(spec):
         params["resume_checkpoint"] = str(resume)

@@ -149,9 +149,26 @@ def write_missing(curves: pd.DataFrame) -> None:
 def main() -> None:
     CURVE_ROOT.mkdir(parents=True, exist_ok=True)
     all_rows: list[dict] = []
+    preserved_path = CURVE_ROOT / "training_curves_long.csv"
+    if preserved_path.exists():
+        try:
+            all_rows.extend(pd.read_csv(preserved_path).to_dict("records"))
+        except Exception:
+            all_rows = []
     inventory: list[dict] = []
     for path in sorted(RESULT_ROOT.rglob("train_episodes.csv")):
         rows, inv = collect_train_file(path)
+        if rows:
+            key = (rows[0]["env_id"], rows[0]["method_key"], int(rows[0]["seed"]))
+            all_rows = [
+                row
+                for row in all_rows
+                if not (
+                    row.get("env_id") == key[0]
+                    and row.get("method_key") == key[1]
+                    and int(row.get("seed", -1)) == key[2]
+                )
+            ]
         all_rows.extend(rows)
         inventory.append(inv)
     curves = pd.DataFrame(all_rows)

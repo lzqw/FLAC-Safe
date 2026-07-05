@@ -1,8 +1,8 @@
 # STAR 1M Autosnapshot
 
-An autosnapshot tmux window periodically runs `collect` and `status`, then writes `/root/star_1m_curves_latest_snapshot.tar.gz` and a timestamped copy under `/root/autodl-tmp/star_v2_storage/backups/`.
+An autosnapshot tmux window periodically runs `collect` and `status`, then writes `/root/star_1m_curves_latest_snapshot.tar.gz` and overwrites `/root/autodl-tmp/star_v2_storage/backups/star_1m_curves_latest_snapshot.tar.gz`.
 
-Purpose: active 1M results are stored under `/dev/shm` to avoid filling the 50G persistent volume, so normalized curve/report snapshots are persisted frequently while training is running.
+Purpose: active 1M results now write to persistent `results/star_1m_curves/` after the single-GPU restart. The latest normalized curve/report snapshot is still persisted frequently while training is running, without accumulating timestamped backup archives on the nearly full 50G volume.
 
 Interval: 300 seconds.
 

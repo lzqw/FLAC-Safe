@@ -1,23 +1,5 @@
 # Missing 1M Curve Sources
 
-- `SafetyCarGoal1-v0` `STAR` seed `1`: no usable `train_episodes.csv` yet.
-- `SafetyCarGoal1-v0` `STAR` seed `2`: no usable `train_episodes.csv` yet.
-- `SafetyCarGoal1-v0` `STAR` seed `3`: no usable `train_episodes.csv` yet.
-- `SafetyCarGoal1-v0` `STAR` seed `4`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `STAR` seed `0`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `STAR` seed `1`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `STAR` seed `2`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `STAR` seed `3`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `STAR` seed `4`: no usable `train_episodes.csv` yet.
-- `SafetyPointGoal1-v0` `SAC-Lag` seed `0`: no usable `train_episodes.csv` yet.
-- `SafetyPointGoal1-v0` `SAC-Lag` seed `1`: no usable `train_episodes.csv` yet.
-- `SafetyPointGoal1-v0` `SAC-Lag` seed `2`: no usable `train_episodes.csv` yet.
-- `SafetyCarGoal1-v0` `SAC-Lag` seed `0`: no usable `train_episodes.csv` yet.
-- `SafetyCarGoal1-v0` `SAC-Lag` seed `1`: no usable `train_episodes.csv` yet.
-- `SafetyCarGoal1-v0` `SAC-Lag` seed `2`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `SAC-Lag` seed `0`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `SAC-Lag` seed `1`: no usable `train_episodes.csv` yet.
-- `SafetyPointPush1-v0` `SAC-Lag` seed `2`: no usable `train_episodes.csv` yet.
 
 ## Methods not launched by this repo
 
